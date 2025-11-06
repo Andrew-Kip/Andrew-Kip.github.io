@@ -1,6 +1,250 @@
-<h2>Unified Pressure Calculator (Downloadable)</h2>
-<p>This calculator runs locally in Python. Download and run:</p>
-<a href="unified_pressure_calculator_with_resistance.py" download>
-  Download Python Script
-</a>
-<p>Requires Python 3, NumPy, SciPy, Matplotlib, and Tkinter.</p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unified Pressure + Resistance Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body {
+      font-family: "Times New Roman", Times, serif;
+      background: #f6f8fa;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    h1 {
+      width: 100%;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .panel {
+      flex: 1 1 400px;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 20px;
+    }
+    label {
+      display: block;
+      margin: 8px 0 3px;
+      font-size: 16px;
+    }
+    input {
+      width: 100%;
+      font-size: 16px;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 12px;
+      padding: 10px 16px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: none;
+      background: #2e8b57;
+      color: white;
+    }
+    button:hover { background: #237b4b; }
+    .result {
+      margin-top: 12px;
+      font-weight: bold;
+    }
+    canvas {
+      margin-top: 20px;
+      background: #fff;
+      border-radius: 6px;
+      width: 100%;
+      height: 380px;
+    }
+    .mode-switch {
+      margin-top: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Unified Pressure + Resistance Calculator</h1>
+
+<!-- Resistance Panel -->
+<div class="panel" id="resPanel">
+  <h2>Resistance Calculation (Poiseuille’s Law)</h2>
+  <label>Length [m]:</label>
+  <input id="length" type="number" step="any" value="0.1" />
+  <label>Radius [m]:</label>
+  <input id="radius" type="number" step="any" value="0.0005" />
+  <label>Viscosity [Pa·s]:</label>
+  <input id="viscosity" type="number" step="any" value="0.001" />
+  <button id="calcR">Calculate Resistance</button>
+  <div class="result" id="resResult">R = —</div>
+</div>
+
+<!-- Pressure Panel -->
+<div class="panel" id="pressPanel">
+  <h2>Unified Pressure Calculator</h2>
+
+  <div class="mode-switch">
+    <label><input type="radio" name="mode" value="positive" checked> Positive Pressure</label>
+    <label><input type="radio" name="mode" value="negative"> Negative Pressure</label>
+  </div>
+
+  <label>Target Pressure [psi gauge]:</label>
+  <input id="Pm" type="number" step="any" value="20" />
+
+  <label>Time [s]:</label>
+  <input id="time" type="number" step="any" value="5" />
+
+  <label>User Initial Volume [mL]:</label>
+  <input id="Vo" type="number" step="any" value="1.0" />
+
+  <label>Resistance [Pa·s/m²]:</label>
+  <input id="R" type="number" step="any" value="1e5" />
+
+  <button id="calcAll">Generate Graph</button>
+  <div class="result" id="pressResult">Enter inputs and click "Generate Graph".</div>
+  <canvas id="chart"></canvas>
+</div>
+
+<script>
+const Po_psi = 14.7;
+const PA_PER_PSI = 6894.76;
+const Po = Po_psi * PA_PER_PSI;
+
+function calcResistance() {
+  const L = parseFloat(document.getElementById("length").value);
+  const r = parseFloat(document.getElementById("radius").value);
+  const mu = parseFloat(document.getElementById("viscosity").value);
+  const R = (8 * mu * L) / (Math.PI * Math.pow(r, 4));
+  if (!isFinite(R)) return;
+  document.getElementById("resResult").innerText = `R = ${R.toExponential(3)} Pa·s/m²`;
+  document.getElementById("R").value = R.toExponential(3);
+}
+document.getElementById("calcR").addEventListener("click", calcResistance);
+
+let chart = null;
+
+function calculate() {
+  const Pm_g = parseFloat(document.getElementById("Pm").value);
+  const t = parseFloat(document.getElementById("time").value);
+  const Vo_ml = parseFloat(document.getElementById("Vo").value);
+  const R = parseFloat(document.getElementById("R").value);
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+
+  const Pm_abs_psi = Pm_g + Po_psi;
+  const Pm = Pm_abs_psi * PA_PER_PSI;
+  const Vo = Vo_ml / 1e6;
+
+  function solvePositive() {
+    let Pi = Pm + 0.01 * PA_PER_PSI;
+    let Pt = 0.1, iter = 0;
+    function f(P, Pi) {
+      const A = Math.log(Pi - Po) - Math.log(Pi) + (Po / Pi);
+      return Math.log(P - Po) - Math.log(P) + (Po / P) - (Po / (Vo * R)) * t - A;
+    }
+    while (Pt < Pm && iter < 20000) {
+      let x0 = Pm, x1 = Pi;
+      for (let i = 0; i < 60; i++) {
+        const mid = 0.5*(x0 + x1);
+        const fm = f(mid, Pi);
+        if (Math.abs(fm) < 1e-9) { Pt = mid; break; }
+        if (f(x0, Pi)*fm < 0) x1 = mid; else x0 = mid;
+      }
+      if (!isFinite(Pt)) Pt = x1;
+      Pi += 0.01 * PA_PER_PSI;
+      iter++;
+    }
+    const Vf = (Po / Pt) * Vo;
+    const dV = (Vo - Vf) * 1e6;
+    const Pt_g = Pt / PA_PER_PSI - Po_psi;
+    const A = Math.log(Pt - Po) - Math.log(Pt) + (Po / Pt);
+    const data = [];
+    for (let P = Pt; P > Pt - 2*PA_PER_PSI; P -= 0.01*PA_PER_PSI) {
+      const tg = -(Vo * R / Po) * ((Math.log(P - Po) - Math.log(P) + (Po / P)) - A);
+      data.push([tg, (P - Po) / PA_PER_PSI]);
+    }
+    return {data, dV, Pt_g};
+  }
+
+  function solveNegative() {
+    let Pi = Pm - 0.01 * PA_PER_PSI;
+    let Pt = Po - 100, iter = 0;
+    function f(P, Pi) {
+      const A = Math.log(Po - Pi) - Math.log(Po) + (Pi / Po);
+      return Math.log(Po - P) - Math.log(Po) + (P / Po) - (Po / (Vo * R)) * t - A;
+    }
+    while (Pt > Pm && iter < 20000) {
+      let x0 = Pm, x1 = Pi;
+      for (let i = 0; i < 60; i++) {
+        const mid = 0.5*(x0 + x1);
+        const fm = f(mid, Pi);
+        if (Math.abs(fm) < 1e-9) { Pt = mid; break; }
+        if (f(x0, Pi)*fm < 0) x1 = mid; else x0 = mid;
+      }
+      if (!isFinite(Pt)) Pt = x1;
+      Pi -= 0.01 * PA_PER_PSI;
+      iter++;
+    }
+    const Vf = (Po / Pt) * Vo;
+    const dV = Math.abs(Vo - Vf) * 1e6;
+    const Pt_g = Pt / PA_PER_PSI - Po_psi;
+    const A = Math.log(Po - Pt) - Math.log(Po) + (Pt / Po);
+    const data = [];
+    for (let P = Pt; P < Po - 500; P += 500) {
+      const tg = -(Vo * R / Po) * ((Math.log(Po - P) - Math.log(Po) + (P / Po)) - A);
+      data.push([tg, (P - Po) / PA_PER_PSI]);
+    }
+    return {data, dV, Pt_g};
+  }
+
+  const result = (mode === "positive") ? solvePositive() : solveNegative();
+  const data = result.data.sort((a,b)=>a[0]-b[0]);
+  const times = data.map(d=>d[0]);
+  const pressures = data.map(d=>d[1]);
+
+  if (chart) chart.destroy();
+  const ctx = document.getElementById("chart").getContext("2d");
+  chart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: times,
+      datasets:[
+        {
+          label:`Pressure vs Time (${mode})`,
+          data: pressures,
+          borderWidth:2,
+          borderColor:(mode==="positive"?"blue":"red"),
+          tension:0.15,
+          fill:false,
+          pointRadius:0
+        },
+        {
+          label:'Area up to t',
+          data: pressures.map((p,i)=>times[i]<=t?p:null),
+          fill:'+1',
+          backgroundColor:(mode==="positive"?'rgba(0,128,255,0.4)':'rgba(255,80,80,0.4)'),
+          borderWidth:0,
+          pointRadius:0
+        }
+      ]
+    },
+    options:{
+      scales:{
+        x:{type:'linear',title:{display:true,text:'Time (s)'},min:0},
+        y:{title:{display:true,text:'Pressure (psi)'}}
+      },
+      plugins:{legend:{display:true}}
+    }
+  });
+
+  document.getElementById("pressResult").innerText =
+    `ΔV = ${result.dV.toFixed(4)} mL | Pi = ${result.Pt_g.toFixed(3)} psi`;
+}
+document.getElementById("calcAll").addEventListener("click", calculate);
+</script>
+
+</body>
+</html>
