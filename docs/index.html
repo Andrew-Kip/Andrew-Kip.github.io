@@ -114,6 +114,7 @@ const Po_psi = 14.7;
 const PA_PER_PSI = 6894.76;
 const Po = Po_psi * PA_PER_PSI;
 
+// Resistance calculation (unchanged)
 function calcResistance() {
   const L = parseFloat(document.getElementById("length").value);
   const r = parseFloat(document.getElementById("radius").value);
@@ -125,6 +126,43 @@ function calcResistance() {
 }
 document.getElementById("calcR").addEventListener("click", calcResistance);
 
+// --- numeric helpers: sample-and-bisect root-finder ---
+// find an x in [xmin, xmax] such that f(x) ~= 0 using sampling to bracket then bisection
+function findRootBySamplingAndBisection(f, xmin, xmax, PiArg, samples=200, tol=1e-9, maxIter=80) {
+  const xs = [];
+  const dx = (xmax - xmin) / (samples - 1);
+  for (let i=0;i<samples;i++) xs.push(xmin + dx*i);
+
+  let fvals = xs.map(x => {
+    try { return f(x, PiArg); } catch(e) { return NaN; }
+  });
+
+  // find first bracket where sign changes and both finite
+  let a = null, b = null;
+  for (let i=0;i<samples-1;i++) {
+    const f1 = fvals[i], f2 = fvals[i+1];
+    if (!isFinite(f1) || !isFinite(f2)) continue;
+    if (f1 === 0) return xs[i];
+    if (f1*f2 < 0) { a = xs[i]; b = xs[i+1]; break; }
+  }
+  if (a === null) return NaN; // no bracket found
+
+  // bisection
+  let fa = f(a, PiArg), fb = f(b, PiArg);
+  for (let it=0; it<maxIter; it++) {
+    const m = 0.5*(a+b);
+    const fm = f(m, PiArg);
+    if (!isFinite(fm)) { // adjust tiny bit
+      a = 0.9999*a + 0.0001*b;
+      continue;
+    }
+    if (Math.abs(fm) < tol) return m;
+    if (fa*fm < 0) { b = m; fb = fm; } else { a = m; fa = fm; }
+    if (Math.abs(b - a) < 1e-12) return 0.5*(a+b);
+  }
+  return 0.5*(a+b);
+}
+
 let chart = null;
 
 function calculate() {
@@ -134,115 +172,190 @@ function calculate() {
   const R = parseFloat(document.getElementById("R").value);
   const mode = document.querySelector('input[name="mode"]:checked').value;
 
+  if (!isFinite(Pm_g) || !isFinite(t) || !isFinite(Vo_ml) || !isFinite(R)) {
+    alert("Please provide valid numeric inputs.");
+    return;
+  }
+
   const Pm_abs_psi = Pm_g + Po_psi;
   const Pm = Pm_abs_psi * PA_PER_PSI;
   const Vo = Vo_ml / 1e6;
 
-  function solvePositive() {
+  // --- Positive mode solver (mirrors Python) ---
+  function solvePositive_single(Vo_local) {
     let Pi = Pm + 0.01 * PA_PER_PSI;
-    let Pt = 0.1, iter = 0;
-    function f(P, Pi) {
-      const A = Math.log(Pi - Po) - Math.log(Pi) + (Po / Pi);
-      return Math.log(P - Po) - Math.log(P) + (Po / P) - (Po / (Vo * R)) * t - A;
+    let Pt = 0.1; // initial
+    const maxIter = 20000;
+    let iter = 0;
+
+    function f(P, PiArg) {
+      // same formula as python: log(P - Po) - log(P) + Po/P - (Po/(Vo*R))*t - A
+      const A = Math.log(PiArg - Po) - Math.log(PiArg) + (Po / PiArg);
+      return Math.log(P - Po) - Math.log(P) + (Po / P) - (Po / (Vo_local * R)) * t - A;
     }
-    while (Pt < Pm && iter < 20000) {
-      let x0 = Pm, x1 = Pi;
-      for (let i = 0; i < 60; i++) {
-        const mid = 0.5*(x0 + x1);
-        const fm = f(mid, Pi);
-        if (Math.abs(fm) < 1e-9) { Pt = mid; break; }
-        if (f(x0, Pi)*fm < 0) x1 = mid; else x0 = mid;
-      }
-      if (!isFinite(Pt)) Pt = x1;
+
+    // increment Pi until Pt >= Pm (i.e., root Pt found that is >= Pm)
+    while ( (isNaN(Pt) || Pt < Pm) && iter < maxIter) {
+      // search for root of f(P, Pi) for P in (Po, Pi)
+      const xmin = Po + 1e-9;
+      const xmax = Pi - 1e-9;
+      if (xmax <= xmin) { Pi += 0.01*PA_PER_PSI; iter++; continue; }
+
+      const root = findRootBySamplingAndBisection(f, xmin, xmax, Pi, 300);
+      if (isFinite(root) && root > 0) Pt = root;
+      else Pt = NaN;
+
       Pi += 0.01 * PA_PER_PSI;
       iter++;
     }
-    const Vf = (Po / Pt) * Vo;
-    const dV = (Vo - Vf) * 1e6;
-    const Pt_g = Pt / PA_PER_PSI - Po_psi;
+    if (!isFinite(Pt)) throw new Error("No convergence finding Pt (positive mode)");
+
+    // Now produce data points from P=Pt down to P > (Pi - (2 * 6894.76))
     const A = Math.log(Pt - Po) - Math.log(Pt) + (Po / Pt);
     const data = [];
-    for (let P = Pt; P > Pt - 2*PA_PER_PSI; P -= 0.01*PA_PER_PSI) {
-      const tg = -(Vo * R / Po) * ((Math.log(P - Po) - Math.log(P) + (Po / P)) - A);
-      data.push([tg, (P - Po) / PA_PER_PSI]);
+    // final Pi after exit has been incremented one extra time in the loop; replicate python behavior
+    const Pi_final = Pi;
+    const stopP = Pi_final - (2 * PA_PER_PSI);
+    const dP = 0.01 * PA_PER_PSI;
+    for (let P = Pt; P > stopP; P -= dP) {
+      const t_graph = -(Vo_local * R / Po) * ((Math.log(P - Po) - Math.log(P) + (Po / P)) - A);
+      data.push({x: t_graph, y: (P - Po) / PA_PER_PSI});
     }
+    // ensure we include a point at requested t (like the python code which appended if last time < t)
+    if (data.length === 0 || data[data.length-1].x < t) {
+      const lastP = data.length ? data[data.length-1].y : (Pt - Po)/PA_PER_PSI;
+      data.push({x: t, y: lastP});
+    }
+
+    const Vf = (Po / Pt) * Vo_local;
+    const dV = (Vo_local - Vf) * 1e6;
+    const Pt_g = (Pt / PA_PER_PSI) - Po_psi;
+    // sort by time
+    data.sort((a,b)=>a.x - b.x);
     return {data, dV, Pt_g};
   }
 
-  function solveNegative() {
+  // --- Negative mode solver (mirrors Python) ---
+  function solveNegative_single(Vo_local) {
     let Pi = Pm - 0.01 * PA_PER_PSI;
-    let Pt = Po - 100, iter = 0;
-    function f(P, Pi) {
-      const A = Math.log(Po - Pi) - Math.log(Po) + (Pi / Po);
-      return Math.log(Po - P) - Math.log(Po) + (P / Po) - (Po / (Vo * R)) * t - A;
+    let Pt = Po - 100;
+    const maxIter = 20000;
+    let iter = 0;
+
+    function f(P, PiArg) {
+      const A = Math.log(Po - PiArg) - Math.log(Po) + (PiArg / Po);
+      return Math.log(Po - P) - Math.log(Po) + (P / Po) - (Po / (Vo_local * R)) * t - A;
     }
-    while (Pt > Pm && iter < 20000) {
-      let x0 = Pm, x1 = Pi;
-      for (let i = 0; i < 60; i++) {
-        const mid = 0.5*(x0 + x1);
-        const fm = f(mid, Pi);
-        if (Math.abs(fm) < 1e-9) { Pt = mid; break; }
-        if (f(x0, Pi)*fm < 0) x1 = mid; else x0 = mid;
-      }
-      if (!isFinite(Pt)) Pt = x1;
+
+    while ((isNaN(Pt) || Pt > Pm) && iter < maxIter) {
+      const xmin = Math.max(1e-9, Pi + 1e-9); // Pi is less than Pm here
+      const xmax = Po - 1e-9; // domain P < Po
+      if (xmax <= xmin) { Pi -= 0.01*PA_PER_PSI; iter++; continue; }
+
+      const root = findRootBySamplingAndBisection(f, xmin, xmax, Pi, 300);
+      if (isFinite(root) && root > 0) Pt = root;
+      else Pt = NaN;
+
       Pi -= 0.01 * PA_PER_PSI;
       iter++;
     }
-    const Vf = (Po / Pt) * Vo;
-    const dV = Math.abs(Vo - Vf) * 1e6;
-    const Pt_g = Pt / PA_PER_PSI - Po_psi;
+    if (!isFinite(Pt)) throw new Error("No convergence finding Pt (negative mode)");
+
     const A = Math.log(Po - Pt) - Math.log(Po) + (Pt / Po);
     const data = [];
-    for (let P = Pt; P < Po - 500; P += 500) {
-      const tg = -(Vo * R / Po) * ((Math.log(Po - P) - Math.log(Po) + (P / Po)) - A);
-      data.push([tg, (P - Po) / PA_PER_PSI]);
+    const stopP = Po - 500;
+    const dP = 500;
+    for (let P = Pt; P < stopP; P += dP) {
+      const t_graph = -(Vo_local * R / Po) * ((Math.log(Po - P) - Math.log(Po) + (P / Po)) - A);
+      data.push({x: t_graph, y: (P - Po) / PA_PER_PSI});
     }
+    if (data.length === 0 || data[data.length-1].x < t) {
+      const lastP = data.length ? data[data.length-1].y : (Pt - Po)/PA_PER_PSI;
+      data.push({x: t, y: lastP});
+    }
+
+    const Vf = (Po / Pt) * Vo_local;
+    const dV = Math.abs(Vo_local - Vf) * 1e6;
+    const Pt_g = (Pt / PA_PER_PSI) - Po_psi;
+    data.sort((a,b)=>a.x - b.x);
     return {data, dV, Pt_g};
   }
 
-  const result = (mode === "positive") ? solvePositive() : solveNegative();
-  const data = result.data.sort((a,b)=>a[0]-b[0]);
-  const times = data.map(d=>d[0]);
-  const pressures = data.map(d=>d[1]);
+  // --- iterate volumes like python: user volume + [5,10,15,20,25] mL ---
+  const vols = [Vo_ml, 5, 10, 15, 20, 25];
+  const series = [];
+  let summaryText = "";
 
+  try {
+    for (let i=0;i<vols.length;i++) {
+      const Vo_iter_ml = vols[i];
+      const Vo_iter = Vo_iter_ml / 1e6;
+      let result;
+      if (mode === "positive") result = solvePositive_single(Vo_iter);
+      else result = solveNegative_single(Vo_iter);
+
+      // keep series: the full curve as x,y pairs
+      series.push({label:`Vo=${Vo_iter_ml} mL (ΔV=${result.dV.toFixed(3)} mL, Pi=${result.Pt_g.toFixed(2)} psi)`,
+                   data: result.data,
+                   borderColor: mode==="positive"?"blue":"red"});
+
+      // for summary show first run (user Vo) results
+      if (i===0) {
+        summaryText = `ΔV = ${result.dV.toFixed(4)} mL | Pi = ${result.Pt_g.toFixed(3)} psi`;
+      }
+    }
+  } catch (err) {
+    alert("Failed to compute curves: " + err);
+    return;
+  }
+
+  // Build Chart.js datasets. We'll create one dataset per Vo (line), plus a filled dataset showing area up to t for the *user* Vo.
+  const datasets = series.map((s, idx) => {
+    return {
+      label: s.label,
+      data: s.data.map(pt => ({x: pt.x, y: pt.y})),
+      borderWidth: 1.5,
+      borderColor: s.borderColor,
+      fill: false,
+      pointRadius: 0,
+      tension: 0.12
+    };
+  });
+
+  // Add area dataset for user's Vo (first series) that only includes points up to t
+  const firstSeries = series[0].data;
+  const fillData = firstSeries.map(pt => (pt.x <= t ? {x:pt.x, y:pt.y} : {x:pt.x, y:null}));
+  datasets.push({
+    label: "Area up to t",
+    data: fillData,
+    fill: true,
+    backgroundColor: mode==="positive" ? 'rgba(0,128,255,0.25)' : 'rgba(255,80,80,0.25)',
+    borderWidth: 0,
+    pointRadius: 0,
+    spanGaps: true
+  });
+
+  // Destroy old chart if present
   if (chart) chart.destroy();
   const ctx = document.getElementById("chart").getContext("2d");
   chart = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels: times,
-      datasets:[
-        {
-          label:`Pressure vs Time (${mode})`,
-          data: pressures,
-          borderWidth:2,
-          borderColor:(mode==="positive"?"blue":"red"),
-          tension:0.15,
-          fill:false,
-          pointRadius:0
-        },
-        {
-          label:'Area up to t',
-          data: pressures.map((p,i)=>times[i]<=t?p:null),
-          fill:'+1',
-          backgroundColor:(mode==="positive"?'rgba(0,128,255,0.4)':'rgba(255,80,80,0.4)'),
-          borderWidth:0,
-          pointRadius:0
-        }
-      ]
-    },
-    options:{
-      scales:{
-        x:{type:'linear',title:{display:true,text:'Time (s)'},min:0},
-        y:{title:{display:true,text:'Pressure (psi)'}}
+    type: 'line',
+    data: { datasets },
+    options: {
+      parsing: false, // we provide x,y objects
+      normalized: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Time (s)' }, min: 0 },
+        y: { title: { display: true, text: 'Pressure (psi)' } }
       },
-      plugins:{legend:{display:true}}
+      plugins: { legend: { display: true }, tooltip: { mode: 'nearest', intersect: false } },
+      elements: { line: { tension: 0 } }
     }
   });
 
-  document.getElementById("pressResult").innerText =
-    `ΔV = ${result.dV.toFixed(4)} mL | Pi = ${result.Pt_g.toFixed(3)} psi`;
+  document.getElementById("pressResult").innerText = summaryText;
 }
+
 document.getElementById("calcAll").addEventListener("click", calculate);
 </script>
 
