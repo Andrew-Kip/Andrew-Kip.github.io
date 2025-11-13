@@ -1,363 +1,292 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Unified Pressure + Resistance Calculator</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Unified Pressure Calculator + Resistance Calculator</title>
+  <link href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css" rel="stylesheet">
   <style>
-    body {
-      font-family: "Times New Roman", Times, serif;
-      background: #f6f8fa;
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 20px;
-    }
-    h1 {
-      width: 100%;
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    .panel {
-      flex: 1 1 400px;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      padding: 20px;
-    }
-    label {
-      display: block;
-      margin: 8px 0 3px;
-      font-size: 16px;
-    }
-    input {
-      width: 100%;
-      font-size: 16px;
-      padding: 6px;
-      box-sizing: border-box;
-    }
-    button {
-      margin-top: 12px;
-      padding: 10px 16px;
-      font-size: 16px;
-      cursor: pointer;
-      border-radius: 6px;
-      border: none;
-      background: #2e8b57;
-      color: white;
-    }
-    button:hover { background: #237b4b; }
-    .result {
-      margin-top: 12px;
-      font-weight: bold;
-    }
-    canvas {
-      margin-top: 20px;
-      background: #fff;
-      border-radius: 6px;
-      width: 100%;
-      height: 380px;
-    }
-    .mode-switch {
-      margin-top: 10px;
-      font-size: 16px;
-    }
+    :root{--bg:#f4f7fb;--left:#ffffff;--right:#ffffff;--accent:#2E8B57}
+    body{font-family: 'Times New Roman', Times, serif;background:var(--bg);margin:0;padding:18px}
+    .container{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+    .panel{background:#fff;border-radius:8px;padding:16px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+    h2{margin:6px 0 12px;font-size:18px}
+    label{display:block;margin-top:8px;font-size:14px}
+    input[type=text]{width:100%;padding:8px;font-size:14px;margin-top:6px;border:1px solid #ccc;border-radius:4px}
+    button{cursor:pointer;padding:10px 12px;border-radius:8px;border:none;font-weight:700}
+    .btn-primary{background:#4682B4;color:white}
+    .btn-green{background:var(--accent);color:white}
+    .res-box{margin-top:10px;padding:8px;background:#222;color:#fff;border-radius:6px}
+    .mode-row{display:flex;gap:12px;align-items:center;margin-bottom:8px}
+    .charts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+    .chart-card{background:#fafafa;padding:8px;border-radius:6px}
+    .chart-title{font-size:12px;margin:6px 0}
+    .small{font-size:12px}
+    @media(max-width:900px){.container{grid-template-columns:1fr;}.charts-grid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body>
+  <div class="container">
+    <!-- Left: Resistance Calculator -->
+    <div class="panel" id="left-panel">
+      <h2>Resistance Calculation</h2>
+      <label>Length [m]:<input id="length" type="text" value="0.1"></label>
+      <label>Radius [m]:<input id="radius" type="text" value="0.001"></label>
+      <label>Viscosity [Pa·s]:<input id="viscosity" type="text" value="0.001"></label>
+      <button id="calcRes" class="btn-primary" style="margin-top:12px">Calculate Resistance</button>
+      <div class="res-box" id="resResult">R = </div>
+    </div>
 
-<h1>Unified Pressure + Resistance Calculator</h1>
+    <!-- Right: Main Pressure Calculator -->
+    <div class="panel" id="right-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2>Unified Pressure Calculator (Positive / Negative)</h2>
+      </div>
 
-<!-- Resistance Panel -->
-<div class="panel" id="resPanel">
-  <h2>Resistance Calculation (Poiseuille’s Law)</h2>
-  <label>Length [m]:</label>
-  <input id="length" type="number" step="any" value="0.1" />
-  <label>Radius [m]:</label>
-  <input id="radius" type="number" step="any" value="0.0005" />
-  <label>Viscosity [Pa·s]:</label>
-  <input id="viscosity" type="number" step="any" value="0.001" />
-  <button id="calcR">Calculate Resistance</button>
-  <div class="result" id="resResult">R = —</div>
-</div>
+      <div class="mode-row">
+        <div style="font-weight:700">Mode:</div>
+        <label><input type="radio" name="mode" value="positive" checked> Positive Pressure</label>
+        <label><input type="radio" name="mode" value="negative"> Negative Pressure</label>
+      </div>
 
-<!-- Pressure Panel -->
-<div class="panel" id="pressPanel">
-  <h2>Unified Pressure Calculator</h2>
+      <label>Target Pressure [psi gauge]:<input id="Pm" type="text" value="0"></label>
+      <label>Time [s]:<input id="time" type="text" value="60"></label>
+      <label>User Initial Volume [mL]:<input id="volume" type="text" value="1"></label>
+      <label>Resistance [Pa·s/m²]:<input id="R" type="text" value="0.001"></label>
 
-  <div class="mode-switch">
-    <label><input type="radio" name="mode" value="positive" checked> Positive Pressure</label>
-    <label><input type="radio" name="mode" value="negative"> Negative Pressure</label>
+      <button id="genGraph" class="btn-green" style="margin-top:12px">Generate Graph</button>
+
+      <div class="charts-grid" id="chartsGrid">
+        <!-- six chart canvases will be injected here -->
+      </div>
+    </div>
   </div>
 
-  <label>Target Pressure [psi gauge]:</label>
-  <input id="Pm" type="number" step="any" value="20" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // ---- Constants ----
+    const Po_psi = 14.7;
+    const Po = Po_psi * 6894.76; // Pa
+    const MAX_RUNTIME = 8_000; // ms per curve
 
-  <label>Time [s]:</label>
-  <input id="time" type="number" step="any" value="5" />
+    // Helper: parse float with fallback
+    function toNum(v, fallback=0){ const n=parseFloat(v); return isFinite(n)?n:fallback }
 
-  <label>User Initial Volume [mL]:</label>
-  <input id="Vo" type="number" step="any" value="1.0" />
-
-  <label>Resistance [Pa·s/m²]:</label>
-  <input id="R" type="number" step="any" value="1e5" />
-
-  <button id="calcAll">Generate Graph</button>
-  <div class="result" id="pressResult">Enter inputs and click "Generate Graph".</div>
-  <canvas id="chart"></canvas>
-</div>
-
-<script>
-const Po_psi = 14.7;
-const PA_PER_PSI = 6894.76;
-const Po = Po_psi * PA_PER_PSI;
-
-// Resistance calculation (unchanged)
-function calcResistance() {
-  const L = parseFloat(document.getElementById("length").value);
-  const r = parseFloat(document.getElementById("radius").value);
-  const mu = parseFloat(document.getElementById("viscosity").value);
-  const R = (8 * mu * L) / (Math.PI * Math.pow(r, 4));
-  if (!isFinite(R)) return;
-  document.getElementById("resResult").innerText = `R = ${R.toExponential(3)} Pa·s/m²`;
-  document.getElementById("R").value = R.toExponential(3);
-}
-document.getElementById("calcR").addEventListener("click", calcResistance);
-
-// --- numeric helpers: sample-and-bisect root-finder ---
-// find an x in [xmin, xmax] such that f(x) ~= 0 using sampling to bracket then bisection
-function findRootBySamplingAndBisection(f, xmin, xmax, PiArg, samples=200, tol=1e-9, maxIter=80) {
-  const xs = [];
-  const dx = (xmax - xmin) / (samples - 1);
-  for (let i=0;i<samples;i++) xs.push(xmin + dx*i);
-
-  let fvals = xs.map(x => {
-    try { return f(x, PiArg); } catch(e) { return NaN; }
-  });
-
-  // find first bracket where sign changes and both finite
-  let a = null, b = null;
-  for (let i=0;i<samples-1;i++) {
-    const f1 = fvals[i], f2 = fvals[i+1];
-    if (!isFinite(f1) || !isFinite(f2)) continue;
-    if (f1 === 0) return xs[i];
-    if (f1*f2 < 0) { a = xs[i]; b = xs[i+1]; break; }
-  }
-  if (a === null) return NaN; // no bracket found
-
-  // bisection
-  let fa = f(a, PiArg), fb = f(b, PiArg);
-  for (let it=0; it<maxIter; it++) {
-    const m = 0.5*(a+b);
-    const fm = f(m, PiArg);
-    if (!isFinite(fm)) { // adjust tiny bit
-      a = 0.9999*a + 0.0001*b;
-      continue;
-    }
-    if (Math.abs(fm) < tol) return m;
-    if (fa*fm < 0) { b = m; fb = fm; } else { a = m; fa = fm; }
-    if (Math.abs(b - a) < 1e-12) return 0.5*(a+b);
-  }
-  return 0.5*(a+b);
-}
-
-let chart = null;
-
-function calculate() {
-  const Pm_g = parseFloat(document.getElementById("Pm").value);
-  const t = parseFloat(document.getElementById("time").value);
-  const Vo_ml = parseFloat(document.getElementById("Vo").value);
-  const R = parseFloat(document.getElementById("R").value);
-  const mode = document.querySelector('input[name="mode"]:checked').value;
-
-  if (!isFinite(Pm_g) || !isFinite(t) || !isFinite(Vo_ml) || !isFinite(R)) {
-    alert("Please provide valid numeric inputs.");
-    return;
-  }
-
-  const Pm_abs_psi = Pm_g + Po_psi;
-  const Pm = Pm_abs_psi * PA_PER_PSI;
-  const Vo = Vo_ml / 1e6;
-
-  // --- Positive mode solver (mirrors Python) ---
-  function solvePositive_single(Vo_local) {
-    let Pi = Pm + 0.01 * PA_PER_PSI;
-    let Pt = 0.1; // initial
-    const maxIter = 20000;
-    let iter = 0;
-
-    function f(P, PiArg) {
-      // same formula as python: log(P - Po) - log(P) + Po/P - (Po/(Vo*R))*t - A
-      const A = Math.log(PiArg - Po) - Math.log(PiArg) + (Po / PiArg);
-      return Math.log(P - Po) - Math.log(P) + (Po / P) - (Po / (Vo_local * R)) * t - A;
+    // Numerical solver (secant with safeguards)
+    function solveSecant(func, x0, x1, tol=1e-6, maxIter=2000){
+      let f0 = func(x0), f1 = func(x1);
+      for(let i=0;i<maxIter;i++){
+        if(Math.abs(f1) < tol) return x1;
+        // avoid division by zero
+        if(Math.abs(f1 - f0) < 1e-14) break;
+        const x2 = x1 - f1 * (x1 - x0) / (f1 - f0);
+        x0 = x1; f0 = f1; x1 = x2; f1 = func(x1);
+      }
+      return null;
     }
 
-    // increment Pi until Pt >= Pm (i.e., root Pt found that is >= Pm)
-    while ( (isNaN(Pt) || Pt < Pm) && iter < maxIter) {
-      // search for root of f(P, Pi) for P in (Po, Pi)
-      const xmin = Po + 1e-9;
-      const xmax = Pi - 1e-9;
-      if (xmax <= xmin) { Pi += 0.01*PA_PER_PSI; iter++; continue; }
+    // Positive pressure solver
+    function calc_curve_positive(Pm, t, R, Vo_ml){
+      const start = performance.now();
+      const Vo = Vo_ml / 1e6;
+      let Pi = Pm + 0.01;
+      let Pt = 0.1; // initial
 
-      const root = findRootBySamplingAndBisection(f, xmin, xmax, Pi, 300);
-      if (isFinite(root) && root > 0) Pt = root;
-      else Pt = NaN;
+      function eqn(P, PiLocal){
+        const A = Math.log(PiLocal - Po) - Math.log(PiLocal) + (Po / PiLocal);
+        return Math.log(P - Po) - Math.log(P) + Po / P - (Po / (Vo * R)) * t - A;
+      }
 
-      Pi += 0.01 * PA_PER_PSI;
-      iter++;
-    }
-    if (!isFinite(Pt)) throw new Error("No convergence finding Pt (positive mode)");
+      let step = 0;
+      while(Pt < Pm){
+        if(performance.now() - start > MAX_RUNTIME) throw new Error(`Timeout for Vo=${Vo_ml} mL (positive mode)`);
+        const guess0 = Math.max(Pm*0.9, Po+1);
+        const guess1 = Math.max(Pm*1.01, Po+2);
+        const sol = solveSecant(p=>eqn(p,Pi), guess0, guess1, 1e-6, 2000);
+        if(sol===null || !isFinite(sol)){
+          Pi += 0.01; step++;
+          if(step>20000) throw new Error(`No convergence for Vo=${Vo_ml} mL`);
+          continue;
+        }
+        Pt = sol;
+        Pi += 0.01;
+        step++;
+        if(step>20000) throw new Error(`No convergence for Vo=${Vo_ml} mL`);
+      }
 
-    // Now produce data points from P=Pt down to P > (Pi - (2 * 6894.76))
-    const A = Math.log(Pt - Po) - Math.log(Pt) + (Po / Pt);
-    const data = [];
-    // final Pi after exit has been incremented one extra time in the loop; replicate python behavior
-    const Pi_final = Pi;
-    const stopP = Pi_final - (2 * PA_PER_PSI);
-    const dP = 0.01 * PA_PER_PSI;
-    for (let P = Pt; P > stopP; P -= dP) {
-      const t_graph = -(Vo_local * R / Po) * ((Math.log(P - Po) - Math.log(P) + (Po / P)) - A);
-      data.push({x: t_graph, y: (P - Po) / PA_PER_PSI});
-    }
-    // ensure we include a point at requested t (like the python code which appended if last time < t)
-    if (data.length === 0 || data[data.length-1].x < t) {
-      const lastP = data.length ? data[data.length-1].y : (Pt - Po)/PA_PER_PSI;
-      data.push({x: t, y: lastP});
-    }
+      // Build data from Pt downward
+      const A = Math.log(Pt - Po) - Math.log(Pt) + (Po / Pt);
+      const data = [];
+      let P = Pt;
+      const dP = 0.01 * 6894.76;
+      while(P > (Pi - (2 * 6894.76))){
+        const t_graph = -(Vo * R / Po) * ((Math.log(P - Po) - Math.log(P) + (Po / P)) - A);
+        data.push([t_graph, (P - Po) / 6894.76]);
+        P -= dP;
+        if(data.length>20000) break;
+      }
 
-    const Vf = (Po / Pt) * Vo_local;
-    const dV = (Vo_local - Vf) * 1e6;
-    const Pt_g = (Pt / PA_PER_PSI) - Po_psi;
-    // sort by time
-    data.sort((a,b)=>a.x - b.x);
-    return {data, dV, Pt_g};
-  }
-
-  // --- Negative mode solver (mirrors Python) ---
-  function solveNegative_single(Vo_local) {
-    let Pi = Pm - 0.01 * PA_PER_PSI;
-    let Pt = Po - 100;
-    const maxIter = 20000;
-    let iter = 0;
-
-    function f(P, PiArg) {
-      const A = Math.log(Po - PiArg) - Math.log(Po) + (PiArg / Po);
-      return Math.log(Po - P) - Math.log(Po) + (P / Po) - (Po / (Vo_local * R)) * t - A;
-    }
-
-    while ((isNaN(Pt) || Pt > Pm) && iter < maxIter) {
-      const xmin = Math.max(1e-9, Pi + 1e-9); // Pi is less than Pm here
-      const xmax = Po - 1e-9; // domain P < Po
-      if (xmax <= xmin) { Pi -= 0.01*PA_PER_PSI; iter++; continue; }
-
-      const root = findRootBySamplingAndBisection(f, xmin, xmax, Pi, 300);
-      if (isFinite(root) && root > 0) Pt = root;
-      else Pt = NaN;
-
-      Pi -= 0.01 * PA_PER_PSI;
-      iter++;
-    }
-    if (!isFinite(Pt)) throw new Error("No convergence finding Pt (negative mode)");
-
-    const A = Math.log(Po - Pt) - Math.log(Po) + (Pt / Po);
-    const data = [];
-    const stopP = Po - 500;
-    const dP = 500;
-    for (let P = Pt; P < stopP; P += dP) {
-      const t_graph = -(Vo_local * R / Po) * ((Math.log(Po - P) - Math.log(Po) + (P / Po)) - A);
-      data.push({x: t_graph, y: (P - Po) / PA_PER_PSI});
-    }
-    if (data.length === 0 || data[data.length-1].x < t) {
-      const lastP = data.length ? data[data.length-1].y : (Pt - Po)/PA_PER_PSI;
-      data.push({x: t, y: lastP});
+      // Ensure last time >= t
+      if(data.length===0){ data.push([0, (Pt - Po)/6894.76]); }
+      if(data[data.length-1][0] < t){
+        const lastP = data[data.length-1][1];
+        data.push([t, lastP]);
+      }
+      const Vf = (Po / Pt) * Vo;
+      const dV = (Vo - Vf) * 1e6; // mL
+      const Pt_g = (Pt / 6894.76) - 14.7;
+      return {data, dV, Pt_g};
     }
 
-    const Vf = (Po / Pt) * Vo_local;
-    const dV = Math.abs(Vo_local - Vf) * 1e6;
-    const Pt_g = (Pt / PA_PER_PSI) - Po_psi;
-    data.sort((a,b)=>a.x - b.x);
-    return {data, dV, Pt_g};
-  }
+    // Negative pressure solver
+    function calc_curve_negative(Pm, t, R, Vo_ml){
+      const start = performance.now();
+      const Vo = Vo_ml / 1e6;
+      let Pi = Pm - 0.01;
+      let Pt = Po - 100;
 
-  // --- iterate volumes like python: user volume + [5,10,15,20,25] mL ---
-  const vols = [Vo_ml, 5, 10, 15, 20, 25];
-  const series = [];
-  let summaryText = "";
+      function eqn(P, PiLocal){
+        const A = Math.log(Po - PiLocal) - Math.log(Po) + (PiLocal / Po);
+        return Math.log(Po - P) - Math.log(Po) + (P / Po) - (Po / (Vo * R)) * t - A;
+      }
 
-  try {
-    for (let i=0;i<vols.length;i++) {
-      const Vo_iter_ml = vols[i];
-      const Vo_iter = Vo_iter_ml / 1e6;
-      let result;
-      if (mode === "positive") result = solvePositive_single(Vo_iter);
-      else result = solveNegative_single(Vo_iter);
+      let step=0;
+      while(Pt > Pm){
+        if(performance.now() - start > MAX_RUNTIME) throw new Error(`Timeout for Vo=${Vo_ml} mL (negative mode)`);
+        const guess0 = Math.max(1, Pm*0.9);
+        const guess1 = Math.max(1, Pm*1.05);
+        const sol = solveSecant(p=>eqn(p,Pi), guess0, guess1, 1e-6, 2000);
+        if(sol===null || !isFinite(sol)){
+          Pi -= 0.01; step++;
+          if(step>20000) throw new Error(`No convergence for Vo=${Vo_ml} mL`);
+          continue;
+        }
+        Pt = sol;
+        Pi -= 0.01;
+        step++;
+        if(step>20000) throw new Error(`No convergence for Vo=${Vo_ml} mL`);
+      }
 
-      // keep series: the full curve as x,y pairs
-      series.push({label:`Vo=${Vo_iter_ml} mL (ΔV=${result.dV.toFixed(3)} mL, Pi=${result.Pt_g.toFixed(2)} psi)`,
-                   data: result.data,
-                   borderColor: mode==="positive"?"blue":"red"});
+      const A = Math.log(Po - Pt) - Math.log(Po) + (Pt / Po);
+      const data = [];
+      let P = Pt;
+      while(P < Po - 500){
+        const t_graph = -(Vo * R / Po) * ((Math.log(Po - P) - Math.log(Po) + (P / Po)) - A);
+        data.push([t_graph, (P - Po) / 6894.76]);
+        P += 500;
+        if(data.length>20000) break;
+      }
 
-      // for summary show first run (user Vo) results
-      if (i===0) {
-        summaryText = `ΔV = ${result.dV.toFixed(4)} mL | Pi = ${result.Pt_g.toFixed(3)} psi`;
+      if(data.length===0){ data.push([0, (Pt - Po)/6894.76]); }
+      if(data[data.length-1][0] < t){
+        const lastP = data[data.length-1][1];
+        data.push([t, lastP]);
+      }
+      const Vf = (Po / Pt) * Vo;
+      const dV = Math.abs(Vo - Vf) * 1e6;
+      const Pt_g = (Pt / 6894.76) - 14.7;
+      return {data, dV, Pt_g};
+    }
+
+    // UI wiring
+    document.getElementById('calcRes').addEventListener('click', ()=>{
+      try{
+        const length = toNum(document.getElementById('length').value);
+        const radius = toNum(document.getElementById('radius').value);
+        const viscosity = toNum(document.getElementById('viscosity').value);
+        if(radius<=0 || length<=0 || viscosity<=0) throw new Error('Inputs must be positive numbers.');
+        const R = (8 * viscosity * length) / (Math.PI * Math.pow(radius,4));
+        document.getElementById('resResult').textContent = `R = ${R.toExponential(3)} Pa·s/m²`;
+        document.getElementById('R').value = R.toExponential(3);
+      }catch(e){ alert('Invalid resistance input:\n' + e.message); }
+    });
+
+    let chartInstances = [];
+    function clearCharts(){
+      chartInstances.forEach(c=>{ try{ c.destroy(); }catch(e){} });
+      chartInstances = [];
+      const grid = document.getElementById('chartsGrid'); grid.innerHTML='';
+      for(let i=0;i<6;i++){
+        const card = document.createElement('div'); card.className='chart-card';
+        const title = document.createElement('div'); title.className='chart-title small'; title.textContent = `Vo=...`;
+        const canvas = document.createElement('canvas'); canvas.id = 'chart'+i; canvas.height=200;
+        card.appendChild(title); card.appendChild(canvas);
+        grid.appendChild(card);
       }
     }
-  } catch (err) {
-    alert("Failed to compute curves: " + err);
-    return;
-  }
 
-  // Build Chart.js datasets. We'll create one dataset per Vo (line), plus a filled dataset showing area up to t for the *user* Vo.
-  const datasets = series.map((s, idx) => {
-    return {
-      label: s.label,
-      data: s.data.map(pt => ({x: pt.x, y: pt.y})),
-      borderWidth: 1.5,
-      borderColor: s.borderColor,
-      fill: false,
-      pointRadius: 0,
-      tension: 0.12
-    };
-  });
+    clearCharts();
 
-  // Add area dataset for user's Vo (first series) that only includes points up to t
-  const firstSeries = series[0].data;
-  const fillData = firstSeries.map(pt => (pt.x <= t ? {x:pt.x, y:pt.y} : {x:pt.x, y:null}));
-  datasets.push({
-    label: "Area up to t",
-    data: fillData,
-    fill: true,
-    backgroundColor: mode==="positive" ? 'rgba(0,128,255,0.25)' : 'rgba(255,80,80,0.25)',
-    borderWidth: 0,
-    pointRadius: 0,
-    spanGaps: true
-  });
+    document.getElementById('genGraph').addEventListener('click', ()=>{
+      try{
+        const Pm_g = toNum(document.getElementById('Pm').value);
+        const t = toNum(document.getElementById('time').value);
+        const Vo_user = toNum(document.getElementById('volume').value);
+        const R = toNum(document.getElementById('R').value);
+        const mode = Array.from(document.getElementsByName('mode')).find(r=>r.checked).value;
+        const Pm_abs = Po_psi + Pm_g; // gauge to abs psi
+        const Pm = Pm_abs * 6894.76;
 
-  // Destroy old chart if present
-  if (chart) chart.destroy();
-  const ctx = document.getElementById("chart").getContext("2d");
-  chart = new Chart(ctx, {
-    type: 'line',
-    data: { datasets },
-    options: {
-      parsing: false, // we provide x,y objects
-      normalized: false,
-      scales: {
-        x: { type: 'linear', title: { display: true, text: 'Time (s)' }, min: 0 },
-        y: { title: { display: true, text: 'Pressure (psi)' } }
-      },
-      plugins: { legend: { display: true }, tooltip: { mode: 'nearest', intersect: false } },
-      elements: { line: { tension: 0 } }
-    }
-  });
+        // prepare canvases
+        clearCharts();
+        const vols = [Vo_user,5,10,15,20,25];
 
-  document.getElementById("pressResult").innerText = summaryText;
-}
+        vols.forEach((Vo_iter,i)=>{
+          const ctx = document.getElementById('chart'+i).getContext('2d');
+          const titleDiv = ctx.canvas.parentNode.querySelector('.chart-title');
+          try{
+            let result;
+            if(mode==='positive'){
+              result = calc_curve_positive(Pm, t, R, Vo_iter);
+            } else {
+              result = calc_curve_negative(Pm, t, R, Vo_iter);
+            }
+            const dataArr = result.data.slice();
+            // sort by time
+            dataArr.sort((a,b)=>a[0]-b[0]);
+            const times = dataArr.map(d=>d[0]);
+            const pressures = dataArr.map(d=>d[1]);
 
-document.getElementById("calcAll").addEventListener("click", calculate);
-</script>
+            titleDiv.textContent = `Vo=${Vo_iter} mL | ΔV=${result.dV.toFixed(3)} mL | Pi=${result.Pt_g.toFixed(2)} psi`;
 
+            const cfg = {
+              type:'line',
+              data:{labels:times, datasets:[{label:'P (psi)',data:pressures,fill:false, borderWidth:1.2, tension:0.2}]},
+              options:{
+                responsive:true, maintainAspectRatio:false,
+                scales:{x:{type:'linear', title:{display:true,text:'t (s)'}}, y:{title:{display:true,text:'P (psi)'}}
+              }}
+            };
+            const chart = new Chart(ctx, cfg);
+            chartInstances.push(chart);
+
+            // shade area up to t
+            // Chart.js v4: add a filled dataset from 0..t
+            const cutoffIndex = times.findIndex(tt=>tt>t);
+            const fillTo = cutoffIndex===-1?times.length-1:cutoffIndex;
+            const fillData = pressures.slice(0, fillTo+1);
+            const fillTimes = times.slice(0, fillTo+1);
+            const fillDs = {label:'Area', data:fillData, fill:true, borderWidth:0, tension:0.2, showLine:false};
+            // create an overlay chart for filling
+            const overlayCfg = JSON.parse(JSON.stringify(cfg));
+            overlayCfg.data.datasets = [overlayCfg.data.datasets[0], fillDs];
+            // tweak dataset colors based on mode
+            if(mode==='positive'){
+              overlayCfg.data.datasets[0].borderColor='blue'; overlayCfg.data.datasets[1].backgroundColor='rgba(135,206,235,0.4)';
+            } else { overlayCfg.data.datasets[0].borderColor='red'; overlayCfg.data.datasets[1].backgroundColor='rgba(250,128,114,0.4)'; }
+            chart.destroy();
+            const chart2 = new Chart(ctx, overlayCfg);
+            chartInstances.push(chart2);
+
+          }catch(e){
+            titleDiv.textContent = `Failed: ${e.message}`;
+            // draw empty canvas text
+            ctx.font = '14px serif'; ctx.fillStyle='red'; ctx.fillText('Failed: '+e.message,10,50);
+          }
+        });
+
+      }catch(e){ alert('Invalid input:\n' + e.message); }
+    });
+  </script>
 </body>
 </html>
