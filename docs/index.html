@@ -74,14 +74,12 @@
       margin-top:12px;
     }
 
-    /* ----------------------------------------
-       FIXED CHART BOX — DOES NOT RESIZE EVER
-       ---------------------------------------- */
+    /* FIXED SIZE CHARTS */
     .chart-card{
       background:#fafafa;
       padding:8px;
       border-radius:6px;
-      height:260px;         /* FIXED SIZE */
+      height:260px;
       position:relative;
     }
 
@@ -94,7 +92,8 @@
 
     .chart-title{
       font-size:12px;
-      margin:6px 0;
+      margin:4px 0;
+      font-weight:bold;
     }
 
     @media(max-width:900px){
@@ -149,11 +148,12 @@ const Po_psi=14.7;
 const Po=Po_psi*6894.76;
 const MAX_RUNTIME=8000;
 
-/* ------------------ HELPERS ----------------------- */
 function toNum(v,fallback=0){
   const n=parseFloat(v);
   return isFinite(n)?n:fallback;
 }
+
+/* ------------------ SECANT SOLVER --------------------- */
 
 function solveSecant(func,x0,x1,tol=1e-6,maxIter=2000){
   let f0=func(x0),f1=func(x1);
@@ -167,14 +167,12 @@ function solveSecant(func,x0,x1,tol=1e-6,maxIter=2000){
   return null;
 }
 
-/* ------------ MODELS REMAIN UNCHANGED ------------- */
-/* (Positive & Negative pressure functions kept same) */
+/* ------------------ POSITIVE CURVE --------------------- */
 
 function calc_curve_positive(Pm,t,R,Vo_ml){
   const start=performance.now();
   const Vo=Vo_ml/1e6;
-  let Pi=Pm+0.01;
-  let Pt=0.1;
+  let Pi=Pm+0.01, Pt=0.1;
 
   function eqn(P,PiL){
     const A=Math.log(PiL-Po)-Math.log(PiL)+(Po/PiL);
@@ -183,9 +181,7 @@ function calc_curve_positive(Pm,t,R,Vo_ml){
 
   let step=0;
   while(Pt<Pm){
-    if(performance.now()-start>MAX_RUNTIME)
-      throw new Error("Timeout");
-
+    if(performance.now()-start>MAX_RUNTIME) throw new Error("Timeout");
     const sol=solveSecant(p=>eqn(p,Pi),Pm*0.9,Pm*1.01);
     if(sol===null||!isFinite(sol)){
       Pi+=0.01;
@@ -198,6 +194,7 @@ function calc_curve_positive(Pm,t,R,Vo_ml){
   }
 
   const A=Math.log(Pt-Po)-Math.log(Pt)+(Po/Pt);
+
   const data=[];
   let P=Pt;
   const dP=0.01*6894.76;
@@ -217,16 +214,18 @@ function calc_curve_positive(Pm,t,R,Vo_ml){
 
   const Vf=(Po/Pt)*Vo;
   const dV=(Vo-Vf)*1e6;
+
   const Pt_g=(Pt/6894.76)-14.7;
 
-  return{data,dV,Pt_g};
+  return {data, dV, Pt_g};
 }
+
+/* ------------------ NEGATIVE CURVE --------------------- */
 
 function calc_curve_negative(Pm,t,R,Vo_ml){
   const start=performance.now();
   const Vo=Vo_ml/1e6;
-  let Pi=Pm-0.01;
-  let Pt=Po-100;
+  let Pi=Pm-0.01, Pt=Po-100;
 
   function eqn(P,PiL){
     const A=Math.log(Po-PiL)-Math.log(Po)+(PiL/Po);
@@ -235,9 +234,7 @@ function calc_curve_negative(Pm,t,R,Vo_ml){
 
   let step=0;
   while(Pt>Pm){
-    if(performance.now()-start>MAX_RUNTIME)
-      throw new Error("Timeout");
-
+    if(performance.now()-start>MAX_RUNTIME) throw new Error("Timeout");
     const sol=solveSecant(p=>eqn(p,Pi),Pm*0.9,Pm*1.05);
     if(sol===null||!isFinite(sol)){
       Pi-=0.01;
@@ -250,6 +247,7 @@ function calc_curve_negative(Pm,t,R,Vo_ml){
   }
 
   const A=Math.log(Po-Pt)-Math.log(Po)+(Pt/Po);
+
   const data=[];
   let P=Pt;
 
@@ -268,12 +266,13 @@ function calc_curve_negative(Pm,t,R,Vo_ml){
 
   const Vf=(Po/Pt)*Vo;
   const dV=Math.abs(Vo-Vf)*1e6;
+
   const Pt_g=(Pt/6894.76)-14.7;
 
-  return{data,dV,Pt_g};
+  return {data, dV, Pt_g};
 }
 
-/* ------------ FIXED CHART CREATION ------------- */
+/* ------------------ CHART MANAGEMENT --------------------- */
 
 let chartInstances=[];
 
@@ -290,7 +289,8 @@ function clearCharts(){
 
     const title=document.createElement("div");
     title.className="chart-title";
-    title.textContent="Vo...";
+    title.id="title"+i;
+    title.textContent="Vo=... | ΔV=... | Pt=...";
 
     const canvas=document.createElement("canvas");
     canvas.id="chart"+i;
@@ -303,7 +303,7 @@ function clearCharts(){
 
 clearCharts();
 
-/* ------------ RESISTANCE BUTTON ------------- */
+/* ------------------ RESISTANCE BUTTON --------------------- */
 
 document.getElementById("calcRes").onclick=()=>{
   const L=toNum(document.getElementById("length").value);
@@ -316,11 +316,12 @@ document.getElementById("calcRes").onclick=()=>{
   }
 
   const R=(8*mu*L)/(Math.PI*r**4);
+
   document.getElementById("resResult").textContent=`R = ${R.toExponential(3)} Pa·s/m²`;
   document.getElementById("R").value=R.toExponential(3);
 };
 
-/* ------------ MAIN GRAPH BUTTON ------------- */
+/* ------------------ MAIN GRAPH GENERATION --------------------- */
 
 document.getElementById("genGraph").onclick=()=>{
 
@@ -328,10 +329,9 @@ document.getElementById("genGraph").onclick=()=>{
   const t=toNum(document.getElementById("time").value);
   const Vo_user=toNum(document.getElementById("volume").value);
   const R=toNum(document.getElementById("R").value);
-
   const mode=document.querySelector("input[name='mode']:checked").value;
-  const Pm_abs=(Po_psi+Pm_g)*6894.76;
 
+  const Pm_abs=(Po_psi+Pm_g)*6894.76;
   const tCutoff=t+60;
 
   clearCharts();
@@ -340,7 +340,7 @@ document.getElementById("genGraph").onclick=()=>{
 
   vols.forEach((vol,i)=>{
     const ctx=document.getElementById("chart"+i).getContext("2d");
-    const title=ctx.canvas.parentNode.querySelector(".chart-title");
+    const title=document.getElementById("title"+i);
 
     try{
       const result=mode==="positive"
@@ -351,7 +351,6 @@ document.getElementById("genGraph").onclick=()=>{
       if(data.length===0) throw new Error("No data");
 
       data.sort((a,b)=>a[0]-b[0]);
-
       const pts=data.map(d=>({x:d[0],y:d[1]}));
 
       const pressures=pts.map(p=>p.y);
@@ -359,7 +358,11 @@ document.getElementById("genGraph").onclick=()=>{
       const ymax=Math.max(...pressures);
       const pad=0.1*(ymax-ymin || 1);
 
-      title.textContent=`Vo=${vol} mL`;
+      const dVf=result.dV.toFixed(3);
+      const Ptf=result.Pt_g.toFixed(3);
+
+      /* ----------- SET CHART TITLE WITH VALUES ----------- */
+      title.textContent=`Vo=${vol} mL | ΔV=${dVf} mL | Pt=${Ptf} psi`;
 
       const chart=new Chart(ctx,{
         type:"line",
@@ -370,9 +373,12 @@ document.getElementById("genGraph").onclick=()=>{
           pointRadius:0
         }]},
         options:{
-          responsive:false,      /* ★ FIXED SIZE, NO RESIZING ★ */
+          responsive:false,
           maintainAspectRatio:false,
           parsing:false,
+          plugins:{
+            legend:{ display:false }   /* REMOVE LEGEND BOX */
+          },
           scales:{
             x:{
               type:"linear",
@@ -393,7 +399,7 @@ document.getElementById("genGraph").onclick=()=>{
       chartInstances.push(chart);
 
     }catch(e){
-      title.textContent="Failed";
+      title.textContent="Error: "+e.message;
       ctx.fillStyle="red";
       ctx.font="14px serif";
       ctx.fillText("Error: "+e.message,10,50);
