@@ -7,7 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css" rel="stylesheet">
   <style>
     :root{--bg:#f4f7fb;--left:#ffffff;--right:#ffffff;--accent:#2E8B57}
-    body{font-family: 'Times New Roman', Times, serif;background:var(--bg);margin:0;padding:18px}
+    body{font-family:'Times New Roman',Times,serif;background:var(--bg);margin:0;padding:18px}
     .container{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
     .panel{background:#fff;border-radius:8px;padding:16px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
     h2{margin:6px 0 12px;font-size:18px}
@@ -19,15 +19,31 @@
     .res-box{margin-top:10px;padding:8px;background:#222;color:#fff;border-radius:6px}
     .mode-row{display:flex;gap:12px;align-items:center;margin-bottom:8px}
     .charts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
-    .chart-card{background:#fafafa;padding:8px;border-radius:6px}
-    .chart-title{font-size:12px;margin:6px 0}
-    .small{font-size:12px}
-    @media(max-width:900px){.container{grid-template-columns:1fr;}.charts-grid{grid-template-columns:repeat(2,1fr)}}
+
+    /* 🔥 FIXED GRAPH SIZE — prevents stretching, elongation, resizing */
+    .chart-card{
+      width:100%;
+      height:260px;          /* Fixed height */
+      position:relative;
+    }
+    .chart-card canvas{
+      width:100% !important;
+      height:100% !important; /* Force fixed height */
+      max-width:100% !important;
+      max-height:100% !important;
+    }
+
+    @media(max-width:900px){
+      .container{grid-template-columns:1fr;}
+      .charts-grid{grid-template-columns:repeat(2,1fr)}
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="panel" id="left-panel">
+
+    <!-- LEFT PANEL -->
+    <div class="panel">
       <h2>Resistance Calculation</h2>
       <label>Length [m]:<input id="length" type="text" value="0.1"></label>
       <label>Radius [m]:<input id="radius" type="text" value="0.001"></label>
@@ -36,13 +52,14 @@
       <div class="res-box" id="resResult">R = </div>
     </div>
 
-    <div class="panel" id="right-panel">
+    <!-- RIGHT PANEL -->
+    <div class="panel">
       <h2>Unified Pressure Calculator (Positive / Negative)</h2>
 
       <div class="mode-row">
         <div style="font-weight:700">Mode:</div>
-        <label><input type="radio" name="mode" value="positive" checked> Positive Pressure</label>
-        <label><input type="radio" name="mode" value="negative"> Negative Pressure</label>
+        <label><input type="radio" name="mode" value="positive" checked> Positive</label>
+        <label><input type="radio" name="mode" value="negative"> Negative</label>
       </div>
 
       <label>Target Pressure [psi gauge]:<input id="Pm" type="text" value="0"></label>
@@ -57,280 +74,235 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
   <script>
+    /* --- CONSTANTS --- */
     const Po_psi = 14.7;
     const Po = Po_psi * 6894.76;
-    const MAX_RUNTIME = 7500;
-    const MAX_POINTS = 6000;
+    const MAX_RUNTIME = 7000;
+    const MAX_POINTS = 5000;
     const EPS = 1e-10;
 
-    function toNum(v,fallback=0){
-      const n = parseFloat(v);
-      return isFinite(n) ? n : fallback;
-    }
+    function toNum(v){ const n=parseFloat(v); return isFinite(n)?n:0; }
+    function now(){ return performance.now(); }
 
-    function nowMs(){ return performance.now(); }
-
-    function solveSecant(func, x0, x1, tol=1e-8, maxIter=600){
+    function solveSecant(f,x0,x1,tol=1e-8,maxIter=600){
       try{
-        let f0 = func(x0), f1 = func(x1);
-        if(!isFinite(f0) || !isFinite(f1)) return null;
+        let f0=f(x0), f1=f(x1);
+        if(!isFinite(f0)||!isFinite(f1)) return null;
         for(let i=0;i<maxIter;i++){
-          if(Math.abs(f1) < tol) return x1;
-          const denom = f1 - f0;
-          if(Math.abs(denom) < 1e-18) return null;
-          const x2 = x1 - f1*(x1-x0)/denom;
-          x0 = x1; f0 = f1;
-          x1 = x2; f1 = func(x1);
+          if(Math.abs(f1)<tol) return x1;
+          const d=f1-f0;
+          if(Math.abs(d)<1e-18) return null;
+          const x2=x1-f1*(x1-x0)/d;
+          x0=x1; f0=f1;
+          x1=x2; f1=f(x1);
           if(!isFinite(f1)) return null;
         }
         return null;
-      } catch(e){ return null; }
+      }catch{ return null; }
     }
 
-    // POSITIVE PRESSURE CURVE
-    function calc_curve_positive(Pm_pa, t_sec, R, Vo_ml){
-      const start = nowMs();
-      const Vo = Vo_ml / 1e6;
-      let Pi = Math.max(Pm_pa + 100, Po + 10);
-      let Pt = Po + 100;
+    /* -------- POSITIVE CURVE -------- */
+    function calc_curve_positive(Pm_pa,t,R,Vo_ml){
+      const start=now();
+      const Vo=Vo_ml/1e6;
 
-      function eqn(P, PiL){
-        if(P <= Po+EPS || PiL <= Po+EPS) return NaN;
-        const A = Math.log(PiL - Po) - Math.log(PiL) + (Po/PiL);
-        return Math.log(P-Po)-Math.log(P)+(Po/P)-(Po/(Vo*R))*t_sec - A;
+      let Pi = Math.max(Pm_pa+100, Po+1);
+      let Pt = Po+1;
+
+      function eqn(P,PiL){
+        if(P<=Po+EPS||PiL<=Po+EPS) return NaN;
+        const A = Math.log(PiL-Po)-Math.log(PiL)+Po/PiL;
+        return Math.log(P-Po)-Math.log(P)+Po/P - (Po/(Vo*R))*t - A;
       }
 
-      let attempts = 0;
+      let tries=0;
       while(Pt < Pm_pa){
-        if(nowMs()-start > MAX_RUNTIME) throw new Error("Positive: Timeout");
+        if(now()-start > MAX_RUNTIME) throw "Timeout";
         const sol = solveSecant(p=>eqn(p,Pi), Pm_pa*0.9, Pm_pa*1.01);
-        if(sol===null || !isFinite(sol)){ Pi+=20; attempts++; if(attempts>2000) throw "No convergence"; continue; }
+        if(!sol){ Pi+=20; tries++; if(tries>2000) throw "No conv"; continue; }
         Pt = sol;
         Pi+=20;
       }
 
-      const A = Math.log(Pt-Po)-Math.log(Pt)+(Po/Pt);
+      const A = Math.log(Pt-Po)-Math.log(Pt)+Po/Pt;
       const data=[];
-      let P=Pt;
-      const dP = 0.01*6894.76;
-      let count=0;
+      let P=Pt, count=0, dP=0.01*6894.76;
 
-      while(P > Po+EPS && count < MAX_POINTS){
-        const val = (Math.log(P-Po)-Math.log(P)+(Po/P)) - A;
-        const t_graph = -(Vo*R/Po)*val;
-        if(isFinite(t_graph)){
-          data.push([t_graph, (P-Po)/6894.76]);
-        }
+      while(P>Po+EPS && count<MAX_POINTS){
+        const tt = -(Vo*R/Po)*((Math.log(P-Po)-Math.log(P)+Po/P)-A);
+        if(isFinite(tt)) data.push([tt,(P-Po)/6894.76]);
         P-=dP;
         count++;
       }
 
       if(data.length===0) data.push([0,(Pt-Po)/6894.76]);
-      if(data[data.length-1][0] < t_sec){
-        const lastP = data[data.length-1][1];
-        data.push([t_sec,lastP]);
-      }
+      if(data[data.length-1][0]<t) data.push([t,data[data.length-1][1]]);
 
-      const Vf = (Po/Pt)*Vo;
-      const dV = (Vo-Vf)*1e6;
-      const Pt_g = (Pt/6894.76)-14.7;
-
-      return { data, dV, Pt_g };
+      return { data };
     }
 
-    // NEGATIVE PRESSURE CURVE
-    function calc_curve_negative(Pm_pa, t_sec, R, Vo_ml){
-      const start = nowMs();
-      const Vo = Vo_ml/1e6;
-      let Pi = Math.min(Pm_pa - 100, Po - 10);
-      let Pt = Po - 100;
+    /* -------- NEGATIVE CURVE -------- */
+    function calc_curve_negative(Pm_pa,t,R,Vo_ml){
+      const start=now();
+      const Vo=Vo_ml/1e6;
+
+      let Pi = Math.min(Pm_pa-100, Po-1);
+      let Pt = Po-100;
 
       function eqn(P,PiL){
-        if(P >= Po-EPS || PiL >= Po-EPS) return NaN;
-        const A = Math.log(Po-PiL)-Math.log(Po)+(PiL/Po);
-        return Math.log(Po-P)-Math.log(Po)+(P/Po)-(Po/(Vo*R))*t_sec-A;
+        if(P>=Po-EPS||PiL>=Po-EPS) return NaN;
+        const A = Math.log(Po-PiL)-Math.log(Po)+PiL/Po;
+        return Math.log(Po-P)-Math.log(Po)+P/Po - (Po/(Vo*R))*t - A;
       }
 
-      let attempts=0;
+      let tries=0;
       while(Pt > Pm_pa){
-        if(nowMs()-start>MAX_RUNTIME) throw new Error("Negative: Timeout");
+        if(now()-start > MAX_RUNTIME) throw "Timeout";
         const sol = solveSecant(p=>eqn(p,Pi), Pm_pa*0.9, Pm_pa*1.05);
-        if(sol===null){ Pi-=20; attempts++; if(attempts>2000) throw "No convergence"; continue; }
+        if(!sol){ Pi-=20; tries++; if(tries>2000) throw "No conv"; continue; }
         Pt = sol;
         Pi-=20;
       }
 
-      const A = Math.log(Po-Pt)-Math.log(Po)+(Pt/Po);
+      const A = Math.log(Po-Pt)-Math.log(Po)+Pt/Po;
       const data=[];
-      let P=Pt;
-      let count=0;
+      let P=Pt, count=0;
 
-      while(P < Po-10 && count<MAX_POINTS){
-        const val = (Math.log(Po-P)-Math.log(Po)+(P/Po))-A;
-        const t_graph = -(Vo*R/Po)*val;
-        if(isFinite(t_graph)){
-          data.push([t_graph,(P-Po)/6894.76]);
-        }
+      while(P<Po-1 && count<MAX_POINTS){
+        const tt = -(Vo*R/Po)*((Math.log(Po-P)-Math.log(Po)+P/Po)-A);
+        if(isFinite(tt)) data.push([tt,(P-Po)/6894.76]);
         P+=500;
         count++;
       }
 
       if(data.length===0) data.push([0,(Pt-Po)/6894.76]);
-      if(data[data.length-1][0] < t_sec){
-        const lastP = data[data.length-1][1];
-        data.push([t_sec,lastP]);
-      }
+      if(data[data.length-1][0]<t) data.push([t,data[data.length-1][1]]);
 
-      const Vf=(Po/Pt)*Vo;
-      const dV=Math.abs(Vo-Vf)*1e6;
-      const Pt_g=(Pt/6894.76)-14.7;
-      return {data,dV,Pt_g};
+      return { data };
     }
 
-    // ------- UI + Graphs --------
-    let chartInstances=[];
+    /* --- UI: Build Chart Boxes --- */
+    let charts=[];
 
     function clearCharts(){
-      chartInstances.forEach(c=>c.destroy());
-      chartInstances=[];
-      const g=document.getElementById('chartsGrid');
-      g.innerHTML="";
+      charts.forEach(c=>c.destroy());
+      charts=[];
+      const grid=document.getElementById("chartsGrid");
+      grid.innerHTML="";
       for(let i=0;i<6;i++){
-        const card=document.createElement('div');
-        card.className='chart-card';
-        const title=document.createElement('div');
-        title.className='chart-title small';
-        title.textContent='Vo=...';
-        const canvas=document.createElement('canvas');
-        canvas.id='chart'+i;
-        canvas.height=200;
-        card.appendChild(title);
-        card.appendChild(canvas);
-        g.appendChild(card);
+        grid.innerHTML += `
+          <div class="chart-card">
+            <div class="chart-title small">Vo...</div>
+            <canvas id="chart${i}"></canvas>
+          </div>
+        `;
       }
     }
-
     clearCharts();
 
-    // Resistance
-    document.getElementById('calcRes').addEventListener('click',()=>{
-      const L = toNum(lengthEl.value);
-      const r = toNum(radiusEl.value);
-      const mu = toNum(viscosityEl.value);
+    /* --- Resistance Button --- */
+    document.getElementById("calcRes").onclick = ()=>{
+      const L=toNum(lengthEl.value), r=toNum(radiusEl.value), mu=toNum(viscosityEl.value);
       if(L<=0||r<=0||mu<=0) return alert("Invalid");
-      const Rval = (8*mu*L)/(Math.PI*r**4);
-      resResult.textContent = `R = ${Rval.toExponential(3)} Pa·s/m²`;
-      REl.value = Rval.toExponential(3);
-    });
+      const R=(8*mu*L)/(Math.PI*r**4);
+      resResult.textContent=`R = ${R.toExponential(3)} Pa·s/m²`;
+      REl.value=R.toExponential(3);
+    };
 
-    const lengthEl=document.getElementById('length'),
-          radiusEl=document.getElementById('radius'),
-          viscosityEl=document.getElementById('viscosity'),
-          resResult=document.getElementById('resResult'),
-          REl=document.getElementById('R');
+    const lengthEl=document.getElementById("length"),
+          radiusEl=document.getElementById("radius"),
+          viscosityEl=document.getElementById("viscosity"),
+          resResult=document.getElementById("resResult"),
+          REl=document.getElementById("R");
 
-    // -------- Main Graph Button ----------
-    document.getElementById('genGraph').addEventListener('click',()=>{
-      try{
-        const Pm_g = toNum(document.getElementById('Pm').value);
-        const t = toNum(document.getElementById('time').value);
-        const tCutoff = t+60;
-        const Vo_user = toNum(document.getElementById('volume').value);
-        const Rval = toNum(document.getElementById('R').value);
-        const mode = document.querySelector("input[name='mode']:checked").value;
+    /* --- MAIN GRAPH BUTTON --- */
+    document.getElementById("genGraph").onclick = ()=>{
 
-        const Pm_abs = (Po_psi + Pm_g)*6894.76;
+      const Pm_g = toNum(document.getElementById("Pm").value);
+      const t = toNum(document.getElementById("time").value);
+      const tCutoff = t+60;
+      const Vo_user = toNum(document.getElementById("volume").value);
+      const R = toNum(document.getElementById("R").value);
+      const mode=document.querySelector("input[name='mode']:checked").value;
+      const Pm_abs = (Po_psi+Pm_g)*6894.76;
 
-        clearCharts();
-        const vols=[Vo_user,5,10,15,20,25];
+      clearCharts();
 
-        vols.forEach((vol,idx)=>{
-          const ctx=document.getElementById("chart"+idx).getContext("2d");
-          const titleDiv = ctx.canvas.parentNode.querySelector(".chart-title");
-          try{
-            let result = (mode==="positive")
-              ? calc_curve_positive(Pm_abs,t,Rval,vol)
-              : calc_curve_negative(Pm_abs,t,Rval,vol);
+      const vols=[Vo_user,5,10,15,20,25];
 
-            // STRICT FILTER: remove invalids before axis scaling
-            let data = result.data.filter(
-              d => isFinite(d[0]) && isFinite(d[1]) && Math.abs(d[1])<1e6
-            );
+      vols.forEach((vol,i)=>{
+        const ctx=document.getElementById("chart"+i).getContext("2d");
+        const title=ctx.canvas.parentNode.querySelector(".chart-title");
 
-            if(data.length===0) throw new Error("No usable data");
+        try{
+          const result = (mode==="positive")
+              ? calc_curve_positive(Pm_abs,t,R,vol)
+              : calc_curve_negative(Pm_abs,t,R,vol);
 
-            // Limit to cutoff
-            data = data.filter(d=>d[0]<=tCutoff);
-            if(data.length===0) throw new Error("No points inside time window");
+          let data = result.data.filter(d=>
+            isFinite(d[0]) && isFinite(d[1]) && Math.abs(d[1]) < 1e6
+          );
 
-            // Sort
-            data.sort((a,b)=>a[0]-b[0]);
+          data = data.filter(d=>d[0] <= tCutoff);
+          if(data.length===0) throw "No data";
 
-            // Reduce if too many
-            if(data.length>MAX_POINTS){
-              const step=Math.ceil(data.length/MAX_POINTS);
-              data=data.filter((_,i)=>i%step===0);
-            }
+          data.sort((a,b)=>a[0]-b[0]);
 
-            // Build arrays
-            const points = data.map(d=>({x:d[0],y:d[1]}));
-            const pressures = points.map(p=>p.y);
+          if(data.length>MAX_POINTS){
+            const step=Math.ceil(data.length/MAX_POINTS);
+            data=data.filter((_,idx)=>idx%step===0);
+          }
 
-            // Compute solid min/max
-            const yMin = Math.min(...pressures);
-            const yMax = Math.max(...pressures);
+          const points=data.map(d=>({x:d[0],y:d[1]}));
+          const pressures=points.map(p=>p.y);
 
-            const padding = 0.1*(yMax - yMin || 1);
+          const yMin=Math.min(...pressures);
+          const yMax=Math.max(...pressures);
+          const pad=0.1*(yMax-yMin || 1);
 
-            titleDiv.textContent =
-              `Vo=${vol} mL | ΔV=${result.dV.toFixed(3)} mL | Pi=${result.Pt_g.toFixed(2)} psi`;
+          title.textContent = `Vo=${vol} mL`;
 
-            const chart = new Chart(ctx,{
-              type:"line",
-              data:{datasets:[{
-                data:points,
-                borderWidth:1.2,
-                tension:0.2,
-                pointRadius:0
-              }]},
-              options:{
-                parsing:false,
-                responsive:true,
-                maintainAspectRatio:false,
-                scales:{
-                  x:{
-                    type:"linear",
-                    min:0,
-                    max:tCutoff,
-                    title:{display:true,text:"t (s)"}
-                  },
-                  y:{
-                    title:{display:true,text:"P (psi)"},
-                    min:yMin-padding,
-                    max:yMax+padding,
-                    ticks:{
-                      autoSkip:true,
-                      maxTicksLimit:7
-                    }
-                  }
+          const chart=new Chart(ctx,{
+            type:"line",
+            data:{datasets:[{
+              data:points,
+              borderWidth:1.2,
+              tension:0.2,
+              pointRadius:0
+            }]},
+            options:{
+              responsive:false,   /* 🔥 prevent resizing */
+              maintainAspectRatio:false,
+              parsing:false,
+              scales:{
+                x:{
+                  type:"linear",
+                  min:0,
+                  max:tCutoff,
+                  title:{text:"t (s)",display:true}
+                },
+                y:{
+                  min:yMin-pad,
+                  max:yMax+pad,
+                  ticks:{maxTicksLimit:6},
+                  title:{text:"P (psi)",display:true}
                 }
               }
-            });
+            }
+          });
 
-            chartInstances.push(chart);
+          charts.push(chart);
 
-          } catch(e){
-            titleDiv.textContent="Failed: "+e.message;
-            ctx.fillStyle="red";
-            ctx.fillText("Failed: "+e.message,10,50);
-          }
-        });
+        }catch(e){
+          title.textContent="Failed: "+e;
+          ctx.fillStyle="red";
+          ctx.fillText("Error: "+e,10,50);
+        }
+      });
 
-      } catch(e){
-        alert("Error: "+e.message);
-      }
-    });
+    };
   </script>
 </body>
 </html>
