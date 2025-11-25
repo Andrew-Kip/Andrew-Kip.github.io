@@ -4,10 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Unified Pressure Calculator + Resistance Calculator</title>
-
-  <!-- LOCAL Chart.js CSS instead of CDN -->
-  <link rel="stylesheet" href="chart.min.css">
-
+  <link href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css" rel="stylesheet">
   <style>
     :root{--bg:#f4f7fb;--accent:#2E8B57}
     body{
@@ -30,9 +27,9 @@
     }
     h2{margin:6px 0 12px;font-size:18px}
     label{display:block;margin-top:8px;font-size:14px}
-    input[type=text]{width:100%;padding:8px;font-size:14px;margin-top:6px;border:1px solid #555;border-radius:4px;}
+    input[type=text]{width:100%;padding:8px;font-size:14px;margin-top:6px;border:1px solid #ccc;border-radius:4px;}
     button{cursor:pointer;padding:10px 12px;border-radius:8px;border:none;font-weight:700;}
-    .btn-primary{background:#1E3E66;color:white}
+    .btn-primary{background:#4682B4;color:white}
     .btn-green{background:var(--accent);color:white}
     .res-box{margin-top:10px;padding:8px;background:#222;color:#fff;border-radius:6px;}
     .mode-row{display:flex;gap:12px;align-items:center;margin-bottom:8px;}
@@ -83,8 +80,8 @@
   </div>
 </div>
 
-<!-- LOCAL JS files instead of CDN -->
-<script src="chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
 <script>
 /* ------------------ CONSTANTS --------------------- */
 const Po_psi = 14.7;
@@ -110,6 +107,7 @@ function solveSecant(func, x0, x1, tol = 1e-6, maxIter = 2000){
 }
 
 /* ------------------ POSITIVE / NEGATIVE CURVE CALCS --------------------- */
+
 function calc_curve_positive(Pm, t, R, Vo_ml){
   const start = performance.now();
   const Vo = Vo_ml / 1e6;
@@ -135,6 +133,7 @@ function calc_curve_positive(Pm, t, R, Vo_ml){
   }
 
   const A = Math.log(Pt - Po) - Math.log(Pt) + (Po / Pt);
+
   const data = [];
   let P = Pt;
   const dP = 0.01 * 6894.76;
@@ -184,6 +183,7 @@ function calc_curve_negative(Pm, t, R, Vo_ml){
   }
 
   const A = Math.log(Po - Pt) - Math.log(Po) + (Pt / Po);
+
   const data = [];
   let P = Pt;
 
@@ -212,7 +212,7 @@ let chartInstances = [];
 
 function destroyAllCharts(){
   chartInstances.forEach(c => {
-    try{ c.destroy(); } catch(e){ }
+    try{ c.destroy(); } catch(e){ /* ignore */ }
   });
   chartInstances = [];
 }
@@ -256,7 +256,7 @@ document.getElementById("calcRes").onclick = () => {
   document.getElementById("R").value = R.toExponential(3);
 };
 
-/* ------------------ MAIN GRAPH GENERATION --------------------- */
+/* ------------------ MAIN GRAPH GENERATION (SYNCHRONIZED Y-AXIS) --------------------- */
 document.getElementById("genGraph").onclick = () => {
   const Pm_g = toNum(document.getElementById("Pm").value);
   const t = toNum(document.getElementById("time").value);
@@ -264,20 +264,24 @@ document.getElementById("genGraph").onclick = () => {
   const R = toNum(document.getElementById("R").value);
   const mode = document.querySelector("input[name='mode']:checked").value;
 
+  // Convert gauge psi to absolute pressure (Pa)
   const Pm_abs = (Po_psi + Pm_g) * 6894.76;
-  const tCutoff = t + 60;
+  const tCutoff = t + 60; // provide a little extension on x axis
 
   destroyAllCharts();
   createEmptyGrid();
 
   const vols = [Vo_user, 5, 10, 15, 20, 25];
 
+  // First pass: compute all datasets and collect global min/max
   const datasets = [];
   let globalMin = Infinity;
   let globalMax = -Infinity;
 
   for(let i=0;i<vols.length;i++){
     const vol = vols[i];
+    const titleEl = document.getElementById("title" + i);
+    const ctxEl = document.getElementById("chart" + i);
     try{
       const result = mode === "positive"
         ? calc_curve_positive(Pm_abs, t, R, vol)
@@ -289,10 +293,12 @@ document.getElementById("genGraph").onclick = () => {
       data.sort((a,b) => a[0] - b[0]);
       const pts = data.map(d => ({ x: d[0], y: d[1] }));
 
+      // compute local min/max
       const pressures = pts.map(p => p.y);
       const ymin = Math.min(...pressures);
       const ymax = Math.max(...pressures);
 
+      // update global min/max
       if(ymin < globalMin) globalMin = ymin;
       if(ymax > globalMax) globalMax = ymax;
 
@@ -305,10 +311,17 @@ document.getElementById("genGraph").onclick = () => {
       });
 
     }catch(err){
-      datasets.push({ index: i, vol, error: err.message });
+      // store a marker so we can show an error later for this card
+      datasets.push({
+        index: i,
+        vol,
+        error: err.message
+      });
+      // don't let one error break global min/max, but provide a fallback range later
     }
   }
 
+  // If no valid data at all, show errors and stop
   const anyValid = datasets.some(ds => ds.pts && ds.pts.length > 0);
   if(!anyValid){
     datasets.forEach(ds => {
@@ -328,21 +341,25 @@ document.getElementById("genGraph").onclick = () => {
     return;
   }
 
+  // Compute padding based on global range (10% of range)
   if(!isFinite(globalMin) || !isFinite(globalMax)){
+    // fallback
     globalMin = -10;
     globalMax = 10;
   }
   let globalRange = globalMax - globalMin;
   if(globalRange === 0){
+    // avoid zero range, give small range centered on value
     globalRange = Math.abs(globalMax) || 1;
-    globalMin -= globalRange * 0.1;
-    globalMax += globalRange * 0.1;
+    globalMin = globalMin - globalRange*0.1;
+    globalMax = globalMax + globalRange*0.1;
     globalRange = globalMax - globalMin;
   }
   const pad = 0.1 * globalRange;
   const yMinFinal = globalMin - pad;
   const yMaxFinal = globalMax + pad;
 
+  // Second pass: create charts with the same y-axis (yMinFinal, yMaxFinal)
   datasets.forEach(ds => {
     const titleEl = document.getElementById("title" + ds.index);
     const canvas = document.getElementById("chart" + ds.index);
@@ -357,7 +374,9 @@ document.getElementById("genGraph").onclick = () => {
       return;
     }
 
-    titleEl.textContent = `Vo=${ds.vol} mL | ΔV=${ds.dV.toFixed(3)} mL | Pt=${ds.Pt_g.toFixed(3)} psi`;
+    const dVf = ds.dV !== undefined ? ds.dV.toFixed(3) : "...";
+    const Ptf = ds.Pt_g !== undefined ? ds.Pt_g.toFixed(3) : "...";
+    titleEl.textContent = `Vo=${ds.vol} mL | ΔV=${dVf} mL | Pt=${Ptf} psi`;
 
     const chart = new Chart(ctx, {
       type: "line",
@@ -397,7 +416,8 @@ document.getElementById("genGraph").onclick = () => {
     chartInstances.push(chart);
   });
 
-};
+}; // end onclick
 </script>
+
 </body>
 </html>
