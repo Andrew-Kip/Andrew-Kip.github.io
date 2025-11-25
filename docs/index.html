@@ -5,47 +5,118 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Unified Pressure Calculator + Resistance Calculator</title>
   <link href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css" rel="stylesheet">
+
   <style>
     :root{--bg:#f4f7fb;--accent:#2E8B57}
+
     body{
-      font-family:'Times New Roman',Times,serif;
+      font-family:'Times New Roman', Times, serif;
       background:var(--bg);
       margin:0;
       padding:18px;
     }
+
     .container{
       display:grid;
       grid-template-columns:360px 1fr;
       gap:16px;
       align-items:start;
     }
+
     .panel{
       background:#fff;
       border-radius:8px;
       padding:16px;
       box-shadow:0 6px 18px rgba(0,0,0,0.06);
     }
+
     h2{margin:6px 0 12px;font-size:18px}
     label{display:block;margin-top:8px;font-size:14px}
-    input[type=text]{width:100%;padding:8px;font-size:14px;margin-top:6px;border:1px solid #ccc;border-radius:4px;}
-    button{cursor:pointer;padding:10px 12px;border-radius:8px;border:none;font-weight:700;}
+
+    input[type=text]{
+      width:100%;
+      padding:8px;
+      font-size:14px;
+      margin-top:6px;
+      border:1px solid #ccc;
+      border-radius:4px;
+    }
+
+    button{
+      cursor:pointer;
+      padding:10px 12px;
+      border-radius:8px;
+      border:none;
+      font-weight:700;
+    }
+
     .btn-primary{background:#4682B4;color:white}
     .btn-green{background:var(--accent);color:white}
-    .res-box{margin-top:10px;padding:8px;background:#222;color:#fff;border-radius:6px;}
-    .mode-row{display:flex;gap:12px;align-items:center;margin-bottom:8px;}
-    .charts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;}
-    .chart-card{background:#fafafa;padding:8px;border-radius:6px;height:260px;position:relative;overflow:hidden;}
-    .chart-card canvas{width:100% !important;height:100% !important;max-width:100% !important;max-height:100% !important;}
-    .chart-title{font-size:12px;margin:4px 0;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+    .res-box{
+      margin-top:10px;
+      padding:8px;
+      background:#222;
+      color:#fff;
+      border-radius:6px;
+    }
+
+    .mode-row{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      margin-bottom:8px;
+    }
+
+    .charts-grid{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:12px;
+      margin-top:12px;
+    }
+
+    /* RESPONSIVE CHARTS — keeps exact proportions on all screens */
+    .chart-card{
+      background:#fafafa;
+      padding:8px;
+      border-radius:6px;
+      width:100%;
+      aspect-ratio:4 / 3;   /* <— Ensures SAME SHAPE on every device */
+      position:relative;
+      overflow:hidden;
+    }
+
+    .chart-card canvas{
+      width:100% !important;
+      height:100% !important;
+      max-width:100% !important;
+      max-height:100% !important;
+    }
+
+    .chart-title{
+      font-size:12px;
+      margin:4px 0;
+      font-weight:bold;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
     @media(max-width:900px){
-      .container{grid-template-columns:1fr;}
-      .charts-grid{grid-template-columns:repeat(2,1fr);}
+      .container{
+        grid-template-columns:1fr;
+      }
+      .charts-grid{
+        grid-template-columns:repeat(2,1fr);
+      }
     }
   </style>
 </head>
+
 <body>
 
 <div class="container">
+
   <!-- LEFT PANEL -->
   <div class="panel" id="left-panel">
     <h2>Resistance Calculation</h2>
@@ -78,159 +149,159 @@
 
     <div class="charts-grid" id="chartsGrid"></div>
   </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <script>
+/* Make Chart.js responsive */
+Chart.defaults.responsive = true;
+Chart.defaults.maintainAspectRatio = true;
+
 /* ------------------ CONSTANTS --------------------- */
 const Po_psi = 14.7;
-const Po = Po_psi * 6894.76; // Pa
-const MAX_RUNTIME = 8000; // ms
+const Po = Po_psi * 6894.76;
+const MAX_RUNTIME = 8000;
 
-function toNum(v, fallback = 0){
+function toNum(v,fallback=0){
   const n = parseFloat(v);
   return isFinite(n) ? n : fallback;
 }
 
 /* ------------------ SECANT SOLVER --------------------- */
-function solveSecant(func, x0, x1, tol = 1e-6, maxIter = 2000){
-  let f0 = func(x0), f1 = func(x1);
+function solveSecant(func,x0,x1,tol=1e-6,maxIter=2000){
+  let f0=func(x0), f1=func(x1);
   for(let i=0;i<maxIter;i++){
-    if(Math.abs(f1) < tol) return x1;
-    if(Math.abs(f1 - f0) < 1e-14) break;
+    if(Math.abs(f1)<tol) return x1;
+    if(Math.abs(f1-f0)<1e-14) break;
     const x2 = x1 - f1*(x1-x0)/(f1-f0);
-    x0 = x1; f0 = f1;
-    x1 = x2; f1 = func(x1);
+    x0=x1; f0=f1;
+    x1=x2; f1=func(x1);
   }
   return null;
 }
 
-/* ------------------ POSITIVE / NEGATIVE CURVE CALCS --------------------- */
-
-function calc_curve_positive(Pm, t, R, Vo_ml){
+/* ------------------ POSITIVE CURVE --------------------- */
+function calc_curve_positive(Pm,t,R,Vo_ml){
   const start = performance.now();
-  const Vo = Vo_ml / 1e6;
+  const Vo = Vo_ml/1e6;
   let Pi = Pm + 0.01, Pt = 0.1;
 
-  function eqn(P, PiL){
-    const A = Math.log(PiL - Po) - Math.log(PiL) + (Po / PiL);
-    return Math.log(P - Po) - Math.log(P) + (Po / P) - (Po / (Vo * R)) * t - A;
+  function eqn(P,PiL){
+    const A = Math.log(PiL-Po) - Math.log(PiL) + (Po/PiL);
+    return Math.log(P-Po) - Math.log(P) + (Po/P) - (Po/(Vo*R))*t - A;
   }
 
-  let step = 0;
+  let step=0;
   while(Pt < Pm){
-    if(performance.now() - start > MAX_RUNTIME) throw new Error("Timeout");
-    const sol = solveSecant(p => eqn(p, Pi), Pm * 0.9, Pm * 1.01);
-    if(sol === null || !isFinite(sol)){
+    if(performance.now()-start > MAX_RUNTIME) throw new Error("Timeout");
+    const sol = solveSecant(p=>eqn(p,Pi), Pm*0.9, Pm*1.01);
+    if(sol===null || !isFinite(sol)){
       Pi += 0.01;
-      if(++step > 20000) throw new Error("No convergence");
+      if(++step>20000) throw new Error("No convergence");
       continue;
     }
     Pt = sol;
     Pi += 0.01;
-    if(++step > 20000) throw new Error("No convergence");
+    if(++step>20000) throw new Error("No convergence");
   }
 
-  const A = Math.log(Pt - Po) - Math.log(Pt) + (Po / Pt);
+  const A = Math.log(Pt-Po) - Math.log(Pt) + (Po/Pt);
 
   const data = [];
   let P = Pt;
-  const dP = 0.01 * 6894.76;
+  const dP = 0.01*6894.76;
 
-  while(P > (Pi - (2 * 6894.76))){
-    const t_graph = -(Vo * R / Po) * ((Math.log(P - Po) - Math.log(P) + (Po / P)) - A);
-    data.push([t_graph, (P - Po) / 6894.76]);
+  while(P > (Pi - 2*6894.76)){
+    const tg = -(Vo*R/Po)*((Math.log(P-Po)-Math.log(P)+(Po/P)) - A);
+    data.push([tg,(P-Po)/6894.76]);
     P -= dP;
-    if(data.length > 20000) break;
   }
 
-  if(data.length === 0) data.push([0, (Pt - Po) / 6894.76]);
-  if(data[data.length - 1][0] < t){
-    const lastP = data[data.length - 1][1];
-    data.push([t, lastP]);
+  if(data.length === 0) data.push([0,(Pt-Po)/6894.76]);
+  if(data[data.length-1][0] < t){
+    const lastP = data[data.length-1][1];
+    data.push([t,lastP]);
   }
 
-  const Vf = (Po / Pt) * Vo;
-  const dV = (Vo - Vf) * 1e6;
-  const Pt_g = (Pt / 6894.76) - 14.7;
+  const Vf = (Po/Pt)*Vo;
+  const dV = (Vo-Vf)*1e6;
+  const Pt_g = (Pt/6894.76) - 14.7;
 
-  return { data, dV, Pt_g };
+  return {data, dV, Pt_g};
 }
 
-function calc_curve_negative(Pm, t, R, Vo_ml){
+/* ------------------ NEGATIVE CURVE --------------------- */
+function calc_curve_negative(Pm,t,R,Vo_ml){
   const start = performance.now();
-  const Vo = Vo_ml / 1e6;
+  const Vo = Vo_ml/1e6;
   let Pi = Pm - 0.01, Pt = Po - 100;
 
-  function eqn(P, PiL){
-    const A = Math.log(Po - PiL) - Math.log(Po) + (PiL / Po);
-    return Math.log(Po - P) - Math.log(Po) + (P / Po) - (Po / (Vo * R)) * t - A;
+  function eqn(P,PiL){
+    const A = Math.log(Po-PiL) - Math.log(Po) + (PiL/Po);
+    return Math.log(Po-P) - Math.log(Po) + (P/Po) - (Po/(Vo*R))*t - A;
   }
 
-  let step = 0;
+  let step=0;
   while(Pt > Pm){
-    if(performance.now() - start > MAX_RUNTIME) throw new Error("Timeout");
-    const sol = solveSecant(p => eqn(p, Pi), Pm * 0.9, Pm * 1.05);
-    if(sol === null || !isFinite(sol)){
+    if(performance.now()-start > MAX_RUNTIME) throw new Error("Timeout");
+    const sol = solveSecant(p=>eqn(p,Pi), Pm*0.9, Pm*1.05);
+    if(sol===null || !isFinite(sol)){
       Pi -= 0.01;
-      if(++step > 20000) throw new Error("No convergence");
+      if(++step>20000) throw new Error("No convergence");
       continue;
     }
     Pt = sol;
     Pi -= 0.01;
-    if(++step > 20000) throw new Error("No convergence");
+    if(++step>20000) throw new Error("No convergence");
   }
 
-  const A = Math.log(Po - Pt) - Math.log(Po) + (Pt / Po);
+  const A = Math.log(Po-Pt) - Math.log(Po) + (Pt/Po);
 
   const data = [];
   let P = Pt;
 
   while(P < Po - 500){
-    const t_graph = -(Vo * R / Po) * ((Math.log(Po - P) - Math.log(Po) + (P / Po)) - A);
-    data.push([t_graph, (P - Po) / 6894.76]);
+    const tg = -(Vo*R/Po)*((Math.log(Po-P)-Math.log(Po)+(P/Po)) - A);
+    data.push([tg,(P-Po)/6894.76]);
     P += 500;
-    if(data.length > 20000) break;
   }
 
-  if(data.length === 0) data.push([0, (Pt - Po) / 6894.76]);
-  if(data[data.length - 1][0] < t){
-    const lastP = data[data.length - 1][1];
-    data.push([t, lastP]);
+  if(data.length === 0) data.push([0,(Pt-Po)/6894.76]);
+  if(data[data.length-1][0] < t){
+    const lastP = data[data.length-1][1];
+    data.push([t,lastP]);
   }
 
-  const Vf = (Po / Pt) * Vo;
-  const dV = Math.abs(Vo - Vf) * 1e6;
-  const Pt_g = (Pt / 6894.76) - 14.7;
+  const Vf = (Po/Pt)*Vo;
+  const dV = Math.abs(Vo-Vf)*1e6;
+  const Pt_g = (Pt/6894.76) - 14.7;
 
-  return { data, dV, Pt_g };
+  return {data,dV,Pt_g};
 }
 
 /* ------------------ CHART MANAGEMENT --------------------- */
 let chartInstances = [];
 
-function destroyAllCharts(){
-  chartInstances.forEach(c => {
-    try{ c.destroy(); } catch(e){ /* ignore */ }
-  });
+function clearCharts(){
+  chartInstances.forEach(c=>{try{c.destroy()}catch(e){}});
   chartInstances = [];
-}
 
-function createEmptyGrid(){
   const grid = document.getElementById("chartsGrid");
   grid.innerHTML = "";
+
   for(let i=0;i<6;i++){
     const card = document.createElement("div");
     card.className = "chart-card";
 
     const title = document.createElement("div");
     title.className = "chart-title";
-    title.id = "title" + i;
+    title.id = "title"+i;
     title.textContent = "Vo=... | ΔV=... | Pt=...";
 
     const canvas = document.createElement("canvas");
-    canvas.id = "chart" + i;
+    canvas.id = "chart"+i;
 
     card.appendChild(title);
     card.appendChild(canvas);
@@ -238,176 +309,130 @@ function createEmptyGrid(){
   }
 }
 
-createEmptyGrid();
+/* init */
+clearCharts();
 
 /* ------------------ RESISTANCE BUTTON --------------------- */
-document.getElementById("calcRes").onclick = () => {
+document.getElementById("calcRes").onclick = ()=>{
   const L = toNum(document.getElementById("length").value);
   const r = toNum(document.getElementById("radius").value);
   const mu = toNum(document.getElementById("viscosity").value);
 
-  if(L <= 0 || r <= 0 || mu <= 0){
+  if(L<=0 || r<=0 || mu<=0){
     alert("Invalid inputs.");
     return;
   }
 
-  const R = (8 * mu * L) / (Math.PI * r ** 4);
+  const R = (8*mu*L)/(Math.PI*r**4);
   document.getElementById("resResult").textContent = `R = ${R.toExponential(3)} Pa·s/m²`;
   document.getElementById("R").value = R.toExponential(3);
 };
 
-/* ------------------ MAIN GRAPH GENERATION (SYNCHRONIZED Y-AXIS) --------------------- */
-document.getElementById("genGraph").onclick = () => {
+/* ------------------ MAIN GRAPH GENERATION --------------------- */
+document.getElementById("genGraph").onclick = ()=>{
+
   const Pm_g = toNum(document.getElementById("Pm").value);
   const t = toNum(document.getElementById("time").value);
   const Vo_user = toNum(document.getElementById("volume").value);
   const R = toNum(document.getElementById("R").value);
   const mode = document.querySelector("input[name='mode']:checked").value;
 
-  // Convert gauge psi to absolute pressure (Pa)
-  const Pm_abs = (Po_psi + Pm_g) * 6894.76;
-  const tCutoff = t + 60; // provide a little extension on x axis
+  const Pm_abs = (Po_psi + Pm_g)*6894.76;
+  const tCutoff = t + 60;
 
-  destroyAllCharts();
-  createEmptyGrid();
+  clearCharts();
 
-  const vols = [Vo_user, 5, 10, 15, 20, 25];
+  const vols=[Vo_user,5,10,15,20,25];
 
-  // First pass: compute all datasets and collect global min/max
-  const datasets = [];
-  let globalMin = Infinity;
-  let globalMax = -Infinity;
+  let datasets=[];
+  let globalMin=Infinity, globalMax=-Infinity;
 
-  for(let i=0;i<vols.length;i++){
-    const vol = vols[i];
-    const titleEl = document.getElementById("title" + i);
-    const ctxEl = document.getElementById("chart" + i);
+  /* FIRST PASS — compute curves + global min/max */
+  vols.forEach((vol,i)=>{
     try{
-      const result = mode === "positive"
-        ? calc_curve_positive(Pm_abs, t, R, vol)
-        : calc_curve_negative(Pm_abs, t, R, vol);
+      const result = mode==="positive"
+        ? calc_curve_positive(Pm_abs,t,R,vol)
+        : calc_curve_negative(Pm_abs,t,R,vol);
 
       let data = result.data.filter(d => isFinite(d[0]) && isFinite(d[1]) && d[0] <= tCutoff);
-      if(data.length === 0) throw new Error("No data generated");
+      if(data.length===0) throw new Error("No data");
 
-      data.sort((a,b) => a[0] - b[0]);
-      const pts = data.map(d => ({ x: d[0], y: d[1] }));
+      data.sort((a,b)=>a[0]-b[0]);
+      const pts = data.map(d=>({x:d[0],y:d[1]}));
 
-      // compute local min/max
-      const pressures = pts.map(p => p.y);
+      const pressures = pts.map(p=>p.y);
       const ymin = Math.min(...pressures);
       const ymax = Math.max(...pressures);
 
-      // update global min/max
-      if(ymin < globalMin) globalMin = ymin;
-      if(ymax > globalMax) globalMax = ymax;
+      globalMin = Math.min(globalMin, ymin);
+      globalMax = Math.max(globalMax, ymax);
 
       datasets.push({
-        index: i,
+        index:i,
         vol,
         pts,
-        dV: result.dV,
-        Pt_g: result.Pt_g
+        dV:result.dV,
+        Pt_g:result.Pt_g
       });
 
-    }catch(err){
-      // store a marker so we can show an error later for this card
-      datasets.push({
-        index: i,
-        vol,
-        error: err.message
-      });
-      // don't let one error break global min/max, but provide a fallback range later
+    } catch(err){
+      datasets.push({index:i,vol,error:err.message});
     }
-  }
+  });
 
-  // If no valid data at all, show errors and stop
-  const anyValid = datasets.some(ds => ds.pts && ds.pts.length > 0);
-  if(!anyValid){
-    datasets.forEach(ds => {
-      const titleEl = document.getElementById("title" + ds.index);
-      const canvas = document.getElementById("chart" + ds.index);
-      if(ds.error){
-        titleEl.textContent = "Error: " + ds.error;
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "red";
-        ctx.font = "14px serif";
-        ctx.fillText("Error: " + ds.error, 10, 50);
-      } else {
-        titleEl.textContent = "No data";
-      }
-    });
-    return;
-  }
-
-  // Compute padding based on global range (10% of range)
+  /* compute GLOBAL padding */
   if(!isFinite(globalMin) || !isFinite(globalMax)){
-    // fallback
-    globalMin = -10;
-    globalMax = 10;
+    globalMin=-10;
+    globalMax=10;
   }
-  let globalRange = globalMax - globalMin;
-  if(globalRange === 0){
-    // avoid zero range, give small range centered on value
-    globalRange = Math.abs(globalMax) || 1;
-    globalMin = globalMin - globalRange*0.1;
-    globalMax = globalMax + globalRange*0.1;
-    globalRange = globalMax - globalMin;
-  }
-  const pad = 0.1 * globalRange;
+  let range = globalMax - globalMin;
+  if(range===0){range=1;}
+  const pad = 0.1 * range;
   const yMinFinal = globalMin - pad;
   const yMaxFinal = globalMax + pad;
 
-  // Second pass: create charts with the same y-axis (yMinFinal, yMaxFinal)
-  datasets.forEach(ds => {
-    const titleEl = document.getElementById("title" + ds.index);
-    const canvas = document.getElementById("chart" + ds.index);
-    const ctx = canvas.getContext("2d");
+  /* SECOND PASS — render charts with unified y-axis */
+  datasets.forEach(ds=>{
+    const titleEl=document.getElementById("title"+ds.index);
+    const canvas=document.getElementById("chart"+ds.index);
+    const ctx=canvas.getContext("2d");
 
     if(ds.error){
-      titleEl.textContent = "Error: " + ds.error;
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle = "red";
-      ctx.font = "14px serif";
-      ctx.fillText("Error: " + ds.error, 10, 50);
+      titleEl.textContent="Error: "+ds.error;
+      ctx.fillStyle="red";
+      ctx.font="14px serif";
+      ctx.fillText("Error: "+ds.error,10,50);
       return;
     }
 
-    const dVf = ds.dV !== undefined ? ds.dV.toFixed(3) : "...";
-    const Ptf = ds.Pt_g !== undefined ? ds.Pt_g.toFixed(3) : "...";
-    titleEl.textContent = `Vo=${ds.vol} mL | ΔV=${dVf} mL | Pt=${Ptf} psi`;
+    titleEl.textContent=
+      `Vo=${ds.vol} mL | ΔV=${ds.dV.toFixed(3)} mL | Pt=${ds.Pt_g.toFixed(3)} psi`;
 
-    const chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        datasets: [{
-          data: ds.pts,
-          borderWidth: 1.2,
-          tension: 0.18,
-          pointRadius: 0,
-          parsing: false
-        }]
-      },
-      options: {
-        responsive: false,
-        maintainAspectRatio: false,
-        parsing: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          x: {
-            type: "linear",
-            min: 0,
-            max: tCutoff,
-            title: { display: true, text: "t (s)" }
+    const chart=new Chart(ctx,{
+      type:"line",
+      data:{datasets:[{
+        data:ds.pts,
+        borderWidth:1.2,
+        tension:0.18,
+        pointRadius:0
+      }]},
+      options:{
+        responsive:true,
+        maintainAspectRatio:true,
+        parsing:false,
+        plugins:{ legend:{display:false} },
+        scales:{
+          x:{
+            type:"linear",
+            min:0,
+            max:tCutoff,
+            title:{display:true,text:"t (s)"}
           },
-          y: {
-            min: yMinFinal,
-            max: yMaxFinal,
-            ticks: { maxTicksLimit: 6 },
-            title: { display: true, text: "P (psi)" }
+          y:{
+            min:yMinFinal,
+            max:yMaxFinal,
+            ticks:{maxTicksLimit:6},
+            title:{display:true,text:"P (psi)"}
           }
         }
       }
@@ -416,7 +441,7 @@ document.getElementById("genGraph").onclick = () => {
     chartInstances.push(chart);
   });
 
-}; // end onclick
+};
 </script>
 
 </body>
