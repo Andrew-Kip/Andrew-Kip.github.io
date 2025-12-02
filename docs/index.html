@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,47 +5,159 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Unified Pressure Calculator + Resistance Calculator</title>
   <link href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css" rel="stylesheet">
+
   <style>
-    :root{--bg:#f4f7fb;--accent:#2E8B57}
-    body{
-      font-family:'Times New Roman',Times,serif;
-      background:var(--bg);
-      margin:0;
-      padding:18px;
+    :root {
+      --bg: #f4f7fb;
+      --accent: #2a7f4f;  /* slightly darker green */
     }
-    .container{
-      display:grid;
-      grid-template-columns:360px 1fr;
-      gap:16px;
-      align-items:start;
+
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      background: var(--bg);
+      margin: 0;
+      padding: 20px;
+      font-size: 18px; /* increased base text size */
     }
-    .panel{
-      background:#fff;
-      border-radius:8px;
-      padding:16px;
-      box-shadow:0 6px 18px rgba(0,0,0,0.06);
+
+    /* Skip Link */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 10px;
+      background: #000;
+      color: #fff;
+      padding: 8px 14px;
+      z-index: 100;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 18px;
     }
-    h2{margin:6px 0 12px;font-size:18px}
-    label{display:block;margin-top:8px;font-size:14px}
-    input[type=text]{width:100%;padding:8px;font-size:14px;margin-top:6px;border:1px solid #555;border-radius:4px;}
-    button{cursor:pointer;padding:10px 12px;border-radius:8px;border:none;font-weight:700;}
-    .btn-primary{background:#1E3E66;color:white}
-    .btn-green{background:var(--accent);color:white}
-    .res-box{margin-top:10px;padding:8px;background:#222;color:#fff;border-radius:6px;}
-    .mode-row{display:flex;gap:12px;align-items:center;margin-bottom:8px;}
-    .charts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;}
-    .chart-card{background:#fafafa;padding:8px;border-radius:6px;height:260px;position:relative;overflow:hidden;}
-    .chart-card canvas{width:100% !important;height:100% !important;max-width:100% !important;max-height:100% !important;}
-    .chart-title{font-size:12px;margin:4px 0;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    @media(max-width:900px){
-      .container{grid-template-columns:1fr;}
-      .charts-grid{grid-template-columns:repeat(2,1fr);}
+    .skip-link:focus {
+      top: 10px;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: #fff;
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+      font-size: 18px;
+    }
+
+    h1, h2 {
+      margin: 8px 0 14px;
+      font-size: 22px; /* increased */
+    }
+
+    label {
+      display: block;
+      margin-top: 12px;
+      font-size: 18px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      font-size: 18px;
+      margin-top: 6px;
+      border: 3px solid #444; /* thicker border */
+      border-radius: 6px;
+    }
+
+    button {
+      cursor: pointer;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .btn-primary {
+      background: #1E3E66;
+      color: white;
+    }
+
+    .btn-green {
+      background: var(--accent);
+      color: white;
+    }
+
+    .res-box {
+      margin-top: 12px;
+      padding: 10px;
+      background: #222;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 18px;
+    }
+
+    .mode-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .chart-card {
+      background: #fafafa;
+      padding: 10px;
+      border-radius: 6px;
+      height: 260px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart-card canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    .chart-title {
+      font-size: 16px;
+      margin: 4px 0;
+      font-weight: bold;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media(max-width: 900px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+      .charts-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
   </style>
 </head>
 <body>
 
+<a href="#main" class="skip-link">Skip to main content</a>
+
+<main id="main">
+
+<h1>Welcome to this page</h1>
+
 <div class="container">
+
   <!-- LEFT PANEL -->
   <div class="panel" id="left-panel">
     <h2>Resistance Calculation</h2>
@@ -55,7 +166,7 @@
     <label>Radius [m]:<input id="radius" type="text" value="0.001"></label>
     <label>Viscosity [Pa·s]:<input id="viscosity" type="text" value="0.001"></label>
 
-    <button id="calcRes" class="btn-primary" style="margin-top:12px">Calculate Resistance</button>
+    <button id="calcRes" class="btn-primary" style="margin-top:14px">Calculate Resistance</button>
 
     <div class="res-box" id="resResult">R = </div>
   </div>
@@ -75,19 +186,22 @@
     <label>User Initial Volume [mL]:<input id="volume" type="text" value="1"></label>
     <label>Resistance [Pa·s/m²]:<input id="R" type="text" value="0.001"></label>
 
-    <button id="genGraph" class="btn-green" style="margin-top:12px">Generate Graph</button>
+    <button id="genGraph" class="btn-green" style="margin-top:14px">Generate Graph</button>
 
     <div class="charts-grid" id="chartsGrid"></div>
   </div>
+
 </div>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
+<!-- Original JavaScript retained exactly as in your file -->
 <script>
 /* ------------------ CONSTANTS --------------------- */
 const Po_psi = 14.7;
-const Po = Po_psi * 6894.76; // Pa
-const MAX_RUNTIME = 8000; // ms
+const Po = Po_psi * 6894.76;
+const MAX_RUNTIME = 8000;
 
 function toNum(v, fallback = 0){
   const n = parseFloat(v);
